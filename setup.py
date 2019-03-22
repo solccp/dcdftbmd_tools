@@ -99,6 +99,10 @@ class BuildExt(build_ext):
             ext.extra_compile_args = opts
         build_ext.build_extensions(self)
 
+with open('requirements.txt') as f:
+    install_requires = f.read().strip().split('\n')
+
+
 setup(
     name='dcdftbmd_tools',
     version=__version__,
@@ -108,7 +112,7 @@ setup(
     description='A Toolkit for handling DCDFTBMD input/output',
     long_description='',
     ext_modules=ext_modules,
-    install_requires=['pybind11>=2.2'],
+    install_requires=install_requires,
     cmdclass={'build_ext': BuildExt},
     zip_safe=False,
     packages=find_packages(),
