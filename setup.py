@@ -2,6 +2,7 @@ from setuptools import setup, Extension, find_packages
 from setuptools.command.build_ext import build_ext
 import sys
 import setuptools
+import glob
 
 __version__ = '0.0.1'
 
@@ -102,6 +103,7 @@ class BuildExt(build_ext):
 with open('requirements.txt') as f:
     install_requires = f.read().strip().split('\n')
 
+scripts_to_install = glob.glob('bin/*')
 
 setup(
     name='dcdftbmd_tools',
@@ -116,5 +118,5 @@ setup(
     cmdclass={'build_ext': BuildExt},
     zip_safe=False,
     packages=find_packages(),
-    scripts=['bin/dcdftbmd.md_stats']
+    scripts=scripts_to_install
 )

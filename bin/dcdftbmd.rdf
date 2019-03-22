@@ -1,0 +1,6 @@
+#!/usr/bin/env python3
+
+import dcdftbmd_tools.analysis.rdf
+
+dcdftbmd_tools.analysis.rdf.rdf()
+
