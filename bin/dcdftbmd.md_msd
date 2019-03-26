@@ -1,0 +1,32 @@
+#!/usr/bin/env python3
+
+import sys
+import argparse
+import dcdftbmd_tools.analysis.md_msd
+import dcdftbmd_tools.analysis.md_msd_fit
+
+parser = argparse.ArgumentParser(description='Compute MSD')
+parser.add_argument('traject', metavar='traject', type=str)
+parser.add_argument('-l', '--latt', type=str, required=True, help='Lattice')
+parser.add_argument('-o', '--output', type=str, required=True, help='Output name')
+parser.add_argument('-s', '--start', type=int, default=0, help='StartTime')
+parser.add_argument('-a', '--tube_axis', type=int, default=0, help='Tube Axis')
+
+parser.add_argument('-fs', '--fit_start', type=int, default=0, help='StartStep')
+parser.add_argument('-n', '--noheader', action="store_true")
+
+group = parser.add_mutually_exclusive_group(required=True)
+group.add_argument('-e', '--elem', type=str, nargs='+', help='Elements to be analyzed')
+group.add_argument('-i', '--index', nargs='+', type=int, help='Index to be analyzed')
+group.add_argument('-if', '--index-file', type=str, help='Index file to load and analyzed')
+
+
+# parser = argparse.ArgumentParser(description='Compute Diffusion Coeffients from MSD data (nxy format)')
+# parser.add_argument('data', metavar='data', type=str)
+
+opt = parser.parse_args()
+
+dcdftbmd_tools.analysis.md_msd.run(opt)
+dcdftbmd_tools.analysis.md_msd_fit.fit(opt.output, opt.fit_start, opt.noheader)
+
+

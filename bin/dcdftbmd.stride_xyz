@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+import sys
+import argparse
+import _dcdftbmd_tools_cpp_extension_md as ext_md
+parser = argparse.ArgumentParser(description='Stride XYZ')
+parser.add_argument('-s', '--stride_size', default=10, type=int)
+parser.add_argument('-i', '--input', type=str, required=True)
+parser.add_argument('-o', '--output', type=str, required=True)
+
+opt = parser.parse_args()
+
+ext_md.stride_xyz(opt.input, opt.output, opt.stride_size)
+
