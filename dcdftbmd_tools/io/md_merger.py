@@ -16,7 +16,7 @@ def merge_md_outputs(opt):
     write_merged = False
     write_parsed_data = False
     
-    if (opt.type == "main"):
+    if (opt.type == "main" or opt.type == "all"):
         write_merged = True
         if (opt.parse_main_data):
             write_parsed_data = True
@@ -35,7 +35,7 @@ def merge_md_outputs(opt):
         merged_filename = f'{opt.merge_prefix}{pathlib.Path(filename).name}'
         ext_md.merge_datafile(opt.folders, last_steps, filename, merged_filename, opt.stride_size, opt.verbose)
 
-    if (opt.type == "mull" or opt.type == "all")):
+    if (opt.type == "mull" or opt.type == "all"):
         filename = pathlib.Path(opt.mull_filename).name
         merged_filename = f'{opt.merge_prefix}{pathlib.Path(filename).name}'
         if (opt.mull_nac):
