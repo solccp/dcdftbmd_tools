@@ -10,6 +10,8 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/lexical_cast.hpp>
 #include <boost/algorithm/string/split.hpp>
+#include <boost/format.hpp>
+
 
 
 namespace py = pybind11;
@@ -17,25 +19,47 @@ using namespace std;
 using namespace boost;
 typedef vector< string > split_vector_type;
 using boost::lexical_cast;
+using boost::format;
+using boost::io::group;
 
-
+// parse and merge the main dcdftbmd output
+// args:
+//   folders: folders to be merged, must be in order.
+//   input_filename: the name of the dcdftbmd output filename, should be dftb.out
+//   verbose: print additional information
+//   merged_filename: merged dcdftbmd main output filename
+//   write_merged: write merged_filename
+//   merged_data_filename: filename for merged parsed data
+//   write_parsed_data: write merged parsed data
 std::vector<int> merge_main_output(const std::vector<std::string> &folders, 
-     const std::string& merged_filename, bool verbose)
-{
-    std::string filename = "dftb.out";
+     const std::string& input_filename, bool verbose, int stride_size,
+     const std::string& merged_filename, bool write_merged, 
+     const std::string& merged_data_filename, bool write_parsed_data){
     vector<int> last_step_nos;
-    if (verbose)
-    {
-        std::cout << "Combining */" << filename << " to " << merged_filename << std::endl;
-    }
     
-    ofstream fout( merged_filename );
+    ofstream fout;
+    if (write_merged)
+    {
+        fout.open(merged_filename);
+    }
+
+    ofstream fout_data;
+    if (write_parsed_data)
+    {
+        fout_data.open(merged_data_filename);
+        fout_data << format("%1$-10s %2$-7s %3$-8s %4$-14s %5$-20s %6$-20s %7$-20s") % "#Time(fs)" % "Step" %
+                    "#Sub.Sys" % "Temperature(K)" % "Pot. Energy(H)" % "Kinetic Energy(H)" % "MD Energy(H)" << endl; 
+    }
+
     bool write_header = false;
     for (size_t i=0; i<folders.size(); ++i)
     {
-        string filein = (folders[i] + "/" + filename);
+        string filein = (folders[i] + "/" + input_filename);
         if (verbose)
-            cout <<  "  Loading " << filein << endl;
+        {
+            cerr <<  "  Loading " << filein << ": ";
+        }
+            
         ifstream fin( filein.c_str() );
         stringstream buffer; 
         string str;
@@ -43,6 +67,15 @@ std::vector<int> merge_main_output(const std::vector<std::string> &folders,
         int max_step = 0;
         int min_step = 0;
         bool first = true;
+
+        //data section
+        int no_subsystems;
+        int step_no;
+        double step_time;
+        double step_temperature;
+        double step_kinEne;
+        double step_mdEne;
+        double step_potEne;
 
         while (getline(fin, str))
         {
@@ -52,9 +85,24 @@ std::vector<int> merge_main_output(const std::vector<std::string> &folders,
                 {
                     write_header = true;
                     buffer << str << endl;
-                    fout << buffer.str() << endl;
+                    if (write_merged)
+                        fout << buffer.str() << endl;
                 }
                 buffer.str("");
+            }
+            else if (starts_with(str,"  ***  Number of subsystems ="))
+            {
+                split_vector_type SplitVec; 
+                split( SplitVec, str, is_any_of(" "), token_compress_on );
+                no_subsystems = lexical_cast<int>(SplitVec[6]) ;
+                buffer << str << endl;
+            }
+            else if (starts_with(str, "    Final") && contains(str, "iterations"))
+            {
+                split_vector_type SplitVec; 
+                split( SplitVec, str, is_any_of(" "), token_compress_on );
+                step_potEne = lexical_cast<double>(SplitVec[5]) ;
+                buffer << str << endl;
             }
             else if (starts_with(str, " *** AT T="))
             {
@@ -63,17 +111,44 @@ std::vector<int> merge_main_output(const std::vector<std::string> &folders,
 
                 split_vector_type SplitVec; 
                 split( SplitVec, str, is_any_of(" "), token_compress_on );
-                int step_no = lexical_cast<int>(SplitVec[10]) ;
+                step_no = lexical_cast<int>(SplitVec[10]) ;
+                step_time = lexical_cast<double>(SplitVec[4]) ;
+
                 if (first)
                 {
                     min_step = step_no;
                     first = false;
+                    if (last_step_nos.size() > 0)
+                    {
+                        if (step_no < last_step_nos.back())
+                        {
+                            throw runtime_error("The order of folder to merge is wrong.");
+                        }
+                    }
                 }
+
+                
                 try
                 {
                     for (int i=0; i<4;++i)
                     {
                         getline(fin, str);
+                        split_vector_type SplitVec; 
+                        split( SplitVec, str, is_any_of(" "), token_compress_on );
+                        switch (i)
+                        {
+                            case 1:
+                                step_temperature = lexical_cast<double>(SplitVec[3]) ;
+                                break;
+                            case 2:
+                                step_kinEne = lexical_cast<double>(SplitVec[4]) ;
+                                break;
+                            case 3:
+                                step_mdEne = lexical_cast<double>(SplitVec[5]) ;
+                                break;
+                            default:
+                                break;
+                        }
                         t_lines.push_back(str);
                     }
                     if (step_no > max_step)
@@ -92,9 +167,14 @@ std::vector<int> merge_main_output(const std::vector<std::string> &folders,
                             to_write = false;
                         }
                     }
+                    if (step_no % stride_size != 0)
+                    {
+                        to_write = false;
+                    }
                     if (to_write)
                     {
-                        fout << buffer.str() << endl;
+                        if (write_merged)
+                            fout << buffer.str() << endl;
                         buffer.str("");
                     }
                     else
@@ -105,28 +185,40 @@ std::vector<int> merge_main_output(const std::vector<std::string> &folders,
                 catch (std::ifstream::failure e) {
                     break;
                 }
+
+                if (write_parsed_data)
+                {
+                    fout_data << format("%1$-10.2f %2$-7d %3$-8d %4$14.4f %5$-20.12f %6$-20.12f %7$-20.12f") % step_time % step_no %
+                    no_subsystems % step_temperature % step_potEne % step_kinEne % step_mdEne << endl; 
+                }
             }
             else
             {
                 buffer << str << endl;
             }
         }
-        fout << buffer.str() << endl;
+        if (write_merged)
+            fout << buffer.str() << endl;
+        
+        
         if (verbose)
-            cout << min_step << max_step << endl;
+        {
+            cerr << min_step << ", " << max_step << endl;
+        }
+            
         last_step_nos.push_back(max_step);
     }
     return last_step_nos;
 }
 
 void merge_datafile(const std::vector<std::string> &folders, const vector<int>& last_step_nos,
-    const std::string& filename, const std::string& merged_filename, bool verbose)
+    const std::string& filename, const std::string& merged_filename, int stride_size, bool verbose)
 {
     string str;
     if (verbose)
-        cout << "Combining */" << filename << " to merged_" << merged_filename  << endl;
+        cout << "Combining */" << filename << " to " << merged_filename  << endl;
 
-    ofstream fout( ("merged_"+merged_filename).c_str() );
+    ofstream fout( (merged_filename).c_str() );
     for (size_t i=0; i<folders.size(); ++i)
     {
         string filein = (folders[i] + "/" + filename );
@@ -171,6 +263,10 @@ void merge_datafile(const std::vector<std::string> &folders, const vector<int>& 
                 }
             }
             else if ( step_no <= last_step_nos[i-1] )
+            {
+                to_write = false;
+            }
+            if (step_no % stride_size != 0)
             {
                 to_write = false;
             }
