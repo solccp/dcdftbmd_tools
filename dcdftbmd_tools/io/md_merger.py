@@ -36,17 +36,12 @@ def merge_md_outputs(opt):
         ext_md.merge_datafile(opt.folders, last_steps, filename, merged_filename, opt.stride_size, opt.verbose)
 
     if (opt.type == "mull"):
-        raise ValueError('Not implement yet')
-        # filename = pathlib.Path(opt.vel_filename).name
-        # merged_filename = f'{opt.merge_prefix}{pathlib.Path(filename).name}'
-        # ext_md.merge_datafile(opt.folders, last_steps, filename, merged_filename, opt.stride_size, opt.verbose)
+        filename = pathlib.Path(opt.mull_filename).name
+        merged_filename = f'{opt.merge_prefix}{pathlib.Path(filename).name}'
+        if (opt.mull_nac):
+            merged_filename = f'{opt.merge_prefix}nac'
+        ext_md.merge_mullfile(opt.folders, last_steps, filename, merged_filename, opt.stride_size, opt.mull_nac, opt.verbose)
 
-#     print(last_steps)
-# #     if merge_trajectory:
-# #         #oid merge_datafile(const std::vector<std::string> &folders, const vector<int>& last_step_nos, 
-# #         # const std::string& filename, const std::string& merged_filename, bool verbose)
-# #         merged_filename = f'{merged_prefix}{pathlib.Path(trajectory_filename).name}'
-# #         ext_md.merge_datafile(folders, last_steps, trajectory_filename, merged_filename, verbose)
 
 def run():
     parser = argparse.ArgumentParser(description='MD Run Merger')
@@ -65,7 +60,7 @@ def run():
     parser.add_argument('--traj_filename', type=str, default='traject')
     parser.add_argument('--vel_filename', type=str, default='velocity')
     parser.add_argument('--mull_nac', action='store_true')
-    parser.add_argument('--mull_filename', type=str, default='mullken')
+    parser.add_argument('--mull_filename', type=str, default='mulliken')
     
     opt = parser.parse_args(sys.argv[1:])
     merge_md_outputs(opt)

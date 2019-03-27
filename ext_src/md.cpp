@@ -287,6 +287,135 @@ void merge_datafile(const std::vector<std::string> &folders, const vector<int>& 
     }
 }
 
+
+void merge_mullfile(const std::vector<std::string> &folders, const vector<int>& last_step_nos,
+    const std::string& filename, const std::string& merged_filename, int stride_size, bool convert_to_nac, bool verbose)
+{
+    string str;
+    if (verbose)
+        cout << "Combining */" << filename << " to " << merged_filename  << endl;
+
+    ofstream fout( (merged_filename).c_str() );
+    for (size_t i=0; i<folders.size(); ++i)
+    {
+        string filein = (folders[i] + "/" + filename );
+        if (verbose)
+            cout <<  "  Loading " << filein << endl;
+
+        ifstream fin( filein.c_str() );
+
+        bool first_line = true;
+
+        int nat = 0;
+        int norb = 0;
+        while (getline(fin, str))
+        {
+            string natline = str;
+            // fout << str << endl;  //nat
+            
+            if (first_line)
+            {
+                first_line = false;
+                split_vector_type SplitVec; 
+                trim(str);
+                split( SplitVec, str, is_any_of(" "), token_compress_on );    
+                norb = lexical_cast<int>(SplitVec[0]) ;  
+                nat = lexical_cast<int>(SplitVec[1]) ;               
+            }          
+                        
+            getline(fin, str);
+            string title_line = str;
+            // fout << str << endl;  //title
+
+            bool to_write = true;
+            
+            split_vector_type SplitVec; 
+            split( SplitVec, str, is_any_of(" "), token_compress_on );
+            int step_no = lexical_cast<int>(SplitVec[10]) ;
+
+            // cout << step_no << endl;
+            if (i==0)
+            {
+                if (step_no > last_step_nos[i])
+                {
+                    break;
+                }
+            }
+            else if ( step_no <= last_step_nos[i-1] )
+            {
+                to_write = false;
+            }
+            if (step_no % stride_size != 0)
+            {
+                to_write = false;
+            }
+            if (to_write)
+            {
+                if (convert_to_nac)
+                {
+                    fout << nat << endl;
+                }
+                else
+                {
+                    fout << norb << endl;
+                }               
+                fout << title_line << endl;
+            }
+            if (convert_to_nac)
+            {
+                if (to_write)
+                {
+                    int cur_atom = 1;
+                    string cur_sym;
+                    double cur_charge = 0.0;
+                    int ind_atom; 
+                    string sym, orb;
+                    double charge;
+                    for (int j=0; j<norb;++j)
+                    {
+                        fin >> ind_atom >> sym >> orb >> charge;
+                        if (ind_atom == cur_atom)
+                        {
+                            cur_charge += charge;
+                            cur_sym = sym;
+                        }
+                        else
+                        {
+                            fout << format("%1$-4s %2$14.8f") % cur_sym % cur_charge << endl;
+                            cur_charge = charge;
+                            cur_atom = ind_atom;
+                            cur_sym = sym;
+                        }
+                    }
+                    fout << format("%1$-4s %2$14.8f") % cur_sym % cur_charge << endl;
+                    getline(fin, str);
+                }
+                else
+                {
+                    for (int j=0; j<norb;++j)
+                    {
+                        getline(fin, str);
+                    }
+                }
+            }
+            else
+            {
+                for (int j=0; j<norb;++j)
+                {
+                    getline(fin, str);
+                    if (to_write)
+                    {
+                        fout << str << endl;
+                    }
+                }   
+            }
+            
+            
+            
+        }
+    }
+}
+
 void stride_xyz(const std::string& input, const std::string& output, int size)
 {
     ifstream fin(input);
@@ -336,6 +465,12 @@ PYBIND11_MODULE(_dcdftbmd_tools_cpp_extension_md, m) {
 
     m.def("merge_datafile", &merge_datafile, R"pbdoc(
         Merge a specific data file (e.g., trajectory file) of DCDFTBMD.
+
+        
+    )pbdoc");
+
+    m.def("merge_mullfile", &merge_mullfile, R"pbdoc(
+        Merge a specific mulliken file of DCDFTBMD.
 
         
     )pbdoc");
