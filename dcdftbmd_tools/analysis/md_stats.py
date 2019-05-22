@@ -60,10 +60,10 @@ def md_stats():
     print ()
     stddev = statistics.stdev(real_data)
     if 'energy' in opt.property:
-        print ('{:<6s} {:15s} {:15s} {:15s} {:15s}'.format('N', 'Mean', 'Max', 'Min', 'StdDev(Kcal/mol)'))
+        print ('{:<6s} {:15s} {:15s} {:15s} {:15s}'.format('N', 'Mean', 'Min', 'Max', 'StdDev(Kcal/mol)'))
         stddev *= 627.5095
     else:
-        print ('{:<6s} {:15s} {:15s} {:15s} {:15s}'.format('N', 'Mean', 'Max', 'Min', 'StdDev(K)'))
+        print ('{:<6s} {:15s} {:15s} {:15s} {:15s}'.format('N', 'Mean', 'Min', 'Max', 'StdDev(K)'))
 
     print ('-'*70)
     print('{:<6d} {:<15.8f} {:<15.8f} {:<15.8f} {:<15.8f}'.format( len(real_data), statistics.mean(real_data), min(real_data), max(real_data), stddev))
