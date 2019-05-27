@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import re
+import io
 
 class OutputParser:
     def __init__(self, options={}):
@@ -79,12 +80,12 @@ class OutputParser:
                     next(enumerator)
                     next(enumerator)
                     line_no, line = next(enumerator)             
-                    m = re.search('\s*\*\s*(?P<arch>.*) Version (?P<ver_num>[0-9.]+) \((?P<ver_date>.*)\)', line)
+                    m = re.search(r'\s*\*\s*(?P<arch>.*) Version (?P<ver_num>[0-9.]+) \((?P<ver_date>.*)\)', line)
                     if m is not None:
                         self.version_arch = m['arch']
                         self.version_number = m['ver_num']
                         self.version_date = m['ver_date']
-                m = re.match('\s+Execution of .* begun (?P<begin_date>.*)', line)
+                m = re.match(r'\s+Execution of .* begun (?P<begin_date>.*)', line)
                 if m:
                     self.begin_time = m['begin_date']
                     next(enumerator)
@@ -117,7 +118,7 @@ class OutputParser:
                     self.no_occ_orbitals = int(line.split()[5])
                 if 'Total number of atoms' in line:
                     self.no_atoms = int(line.split()[5])
-                m = re.match('\s*\*\*\* Start (?P<run_type>.*) \*\*\*\s*', line)
+                m = re.match(r'\s*\*\*\* Start (?P<run_type>.*) \*\*\*\s*', line)
                 if m:
                     self.run_type = m['run_type']
                     if self.run_type == 'geometry optimization':
@@ -127,6 +128,12 @@ class OutputParser:
                     else:
                         print('Parsing ', self.run_type , ' is not implemented')
                     return 
-
-
-    
+    def get_geometry(self):
+        fout = io.StringIO()
+        print ('{} {} {}'.format(self.no_atoms, self.charge, self.spin_multiplicity), file=fout)
+        for sym, coord in zip(*self.last_geom):
+            print('{:<4s} {:18.10f} {:18.10f} {:18.10f}'.format(sym, *coord), file=fout)
+        if hasattr(self, 'last_lattice'):
+            for tv in self.last_lattice[1]:
+                print('{:<4s} {:18.10f} {:18.10f} {:18.10f}'.format('TV', *list(map(float,tv))), file=fout)
+        return fout.getvalue()
