@@ -9,7 +9,7 @@ import argparse
 parser = argparse.ArgumentParser(description='Parse the geometry from the main output file')
 parser.add_argument('output', type=str, default='dftb.out', help='DCDFTBMD main output filename')
 parser.add_argument('-f', '--format', choices=['dcdftbmd', 'poscar', 'xyz'], default='dcdftbmd')
-parser.add_argument('-l', '--lattice', type='str')
+parser.add_argument('-l', '--lattice', type=str)
 
 args = parser.parse_args()
 
@@ -24,19 +24,20 @@ if output_parser.PBC:
         for i in range(3):
             tvs.append(output_parser.last_lattice[1][i])
         lattice = mg.Lattice(tvs) 
-        
-        if args.format == 'dcdftbmd':
-            print(output_parser.get_geometry())
-        else:
-            mole = mg.Structure(lattice, species = output_parser.last_geom[0], coords=output_parser.last_geom[1], coords_are_cartesian=True, to_unit_cell=False)
-            print(mole.to(fmt='poscar'))
     else:
-        lattice = []
+        if (args.lattice):
+            lattice = []
 
-        with open(args.lattice, 'r') as f:
-            for line in f:
-                if 'TV' in line:
-                    lattice.append(list(map(float, line.split()[1:4])))
+            with open(args.lattice, 'r') as f:
+                for line in f:
+                    if 'TV' in line:
+                        lattice.append(list(map(float, line.split()[1:4])))
+            output_parser.last_lattice = lattice
+    if args.format == 'dcdftbmd':
+        print(output_parser.get_geometry())
+    else:
+        mole = mg.Structure(lattice, species = output_parser.last_geom[0], coords=output_parser.last_geom[1], coords_are_cartesian=True, to_unit_cell=False)
+        print(mole.to(fmt='poscar'))
 else:
     if args.format == 'dcdftbmd':
         print(output_parser.get_geometry())
