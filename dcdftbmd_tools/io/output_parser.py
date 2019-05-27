@@ -47,7 +47,7 @@ class OutputParser:
                     coord = list(map(float, arr[1:4]))
                     syms.append(sym)
                     coords.append(coord)
-                self.last_lattice = (syms, coords)
+                self.last_lattice = coords
 
     def _parse_md(self, enumerator):
         pass
@@ -100,10 +100,10 @@ class OutputParser:
                 
                 m = re.match('  (?P<section>[A-Z]+.*[A-Za-z]+)\s+=\s+(?P<value>True|False)', line)
                 if m:
-                    if m['section'] == 'PBC' and m['value'] == 'True':
-                        self.PBC = True
                     keywords = [line.rstrip()]
                     for line_no, line in enumerator:
+                        if 'PBC' in line and 'True' in line:
+                            self.PBC = True
                         if 'Total number of basis set shells' in line:
                             self.no_basis_functions_shell = int(line.split()[7])
                             break
@@ -137,6 +137,6 @@ class OutputParser:
         for sym, coord in zip(*self.last_geom):
             print('{:<4s} {:18.10f} {:18.10f} {:18.10f}'.format(sym, *coord), file=fout)
         if hasattr(self, 'last_lattice'):
-            for tv in self.last_lattice[1]:
+            for tv in self.last_lattice:
                 print('{:<4s} {:18.10f} {:18.10f} {:18.10f}'.format('TV', *list(map(float,tv))), file=fout)
         return fout.getvalue()

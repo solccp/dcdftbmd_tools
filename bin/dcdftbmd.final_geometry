@@ -18,11 +18,10 @@ output_parser.parse(args.output)
 
 
 if output_parser.PBC:
-
     if hasattr(output_parser, 'last_lattice'):
         tvs = []
         for i in range(3):
-            tvs.append(output_parser.last_lattice[1][i])
+            tvs.append(output_parser.last_lattice[i])
         lattice = mg.Lattice(tvs) 
     else:
         if (args.lattice):
@@ -33,6 +32,7 @@ if output_parser.PBC:
                     if 'TV' in line:
                         lattice.append(list(map(float, line.split()[1:4])))
             output_parser.last_lattice = lattice
+            
     if args.format == 'dcdftbmd':
         print(output_parser.get_geometry())
     else:
