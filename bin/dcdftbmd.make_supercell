@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+
+import pymatgen as mg
+import argparse
+import sys
+import numpy as np
+
+parser = argparse.ArgumentParser(description='Make dcdftbmd supercell on geometry')
+parser.add_argument('-i', '--geom', type=str, help='DCDFTBMD geometry filename')
+parser.add_argument('-s', '--supercell', type=str, required=True)
+
+opt = parser.parse_args()
+
+geom_input = sys.stdin
+if opt.geom:
+    geom_input = open(opt.geom, 'r') 
+
+supercell = list(map(lambda x: int(x.strip()), opt.supercell.split(',')))
+if len(supercell) != 3:
+    raise RuntimeError('Supercell should be x,y,z')
+
+# print(supercell)
+
+
+syms = []
+coords = []
+lattice = []
+
+line = next(geom_input)
+arr = line.split()
+nat = int(arr[0])
+charge = int(arr[1])
+spin = int(arr[2])
+for i in range(nat):
+    line = next(geom_input)
+    arr = line.split()
+    syms.append(arr[0])
+    coords.append(list(map(float, arr[1:4])))
+for line in geom_input:
+    if 'TV' in line:
+        lattice.append(list(map(float, line.split()[1:4])))
+
+
+if len(lattice) != 3:
+    raise RuntimeError('Number of TVs is not 3.')
+
+latt = mg.Lattice(lattice)
+final_species = []
+final_coords = []
+for x in range(supercell[0]):
+    for y in range(supercell[1]):
+        for z in range(supercell[2]):
+            for sym, coord in zip(syms, coords):
+                final_species.append(sym)
+                new_coords = np.array(coord) + x*latt.matrix[0] + y*latt.matrix[1] + z*latt.matrix[2] 
+                final_coords.append(new_coords)
+
+final_lattice = [(np.array(x)*v).tolist() for x, v in zip(lattice, supercell)]
+
+
+print('{} {} {}'.format(len(final_species), charge, spin))
+for sym, coord in zip(final_species, final_coords):
+    print('{:<4s} {:18.10f} {:18.10f} {:18.10f}'.format(sym, *coord))
+
+for tv in final_lattice:
+    print('{:<4s} {:18.10f} {:18.10f} {:18.10f}'.format('TV', *tv))
+print("" )

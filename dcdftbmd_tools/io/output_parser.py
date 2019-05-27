@@ -13,6 +13,7 @@ class OutputParser:
         self.end_time = 'unknown'
         self.keywords = ""
         self.options = options
+        self.PBC = False
         pass
 
     def _parse_geom_opt(self, enumerator):
@@ -99,6 +100,8 @@ class OutputParser:
                 
                 m = re.match('  (?P<section>[A-Z]+.*[A-Za-z]+)\s+=\s+(?P<value>True|False)', line)
                 if m:
+                    if m['section'] == 'PBC' and m['value'] == 'True':
+                        self.PBC = True
                     keywords = [line.rstrip()]
                     for line_no, line in enumerator:
                         if 'Total number of basis set shells' in line:
