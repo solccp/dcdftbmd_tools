@@ -5,11 +5,13 @@ import sys
 import dcdftbmd_tools.io.output_parser                
 import pymatgen as mg
 import argparse
+import collections
 
 parser = argparse.ArgumentParser(description='Parse the geometry from the main output file')
 parser.add_argument('output', type=str, default='dftb.out', help='DCDFTBMD main output filename')
 parser.add_argument('-f', '--format', choices=['dcdftbmd', 'poscar', 'xyz'], default='dcdftbmd')
 parser.add_argument('-l', '--lattice', type=str)
+parser.add_argument('-s', '--sort', action='store_true') 
 
 args = parser.parse_args()
 
@@ -37,7 +39,28 @@ if output_parser.PBC:
         print(output_parser.get_geometry())
     else:
         mole = mg.Structure(lattice, species = output_parser.last_geom[0], coords=output_parser.last_geom[1], coords_are_cartesian=True, to_unit_cell=False)
-        print(mole.to(fmt='poscar'))
+        if args.sort :
+            counter = collections.OrderedDict()
+            for sym in output_parser.last_geom[0]:
+                if sym in counter:
+                    counter[sym] += 1
+                else:
+                    counter[sym] = 1
+            
+            print(mole.formula)
+            print('1.0')
+            for tv in lattice:
+                print('{:16.10f} {:16.10f} {:16.10f}'.format(*tv))
+            print(' '.join(counter.keys()))
+            print(' '.join(map(str, counter.values())))
+            print('Cart')
+            for key in counter.keys():
+                for sym, coord in zip(*output_parser.last_geom):
+                    if sym == key:
+                        print('{:16.10f} {:16.10f} {:16.10f} {:>4s}'.format(*coord, sym))
+        else:
+            print(mole.to(fmt='poscar'))
+            
 else:
     if args.format == 'dcdftbmd':
         print(output_parser.get_geometry())
