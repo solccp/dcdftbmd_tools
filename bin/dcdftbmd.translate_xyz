@@ -1,0 +1,4 @@
+#!/usr/bin/env python3
+import dcdftbmd_tools.io.translate_xyz
+
+dcdftbmd_tools.io.translate_xyz.run()

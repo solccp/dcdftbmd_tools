@@ -32,6 +32,7 @@ using boost::io::group;
 //   merged_data_filename: filename for merged parsed data
 //   write_parsed_data: write merged parsed data
 std::vector<int> merge_main_output(const std::vector<std::string> &folders, 
+     bool folders_as_suffix,
      const std::string& input_filename, bool verbose, int stride_size,
      const std::string& merged_filename, bool write_merged, 
      const std::string& merged_data_filename, bool write_parsed_data){
@@ -55,6 +56,12 @@ std::vector<int> merge_main_output(const std::vector<std::string> &folders,
     for (size_t i=0; i<folders.size(); ++i)
     {
         string filein = (folders[i] + "/" + input_filename);
+        if (folders_as_suffix)
+        {
+            filein = input_filename + "." + folders[i];
+        }
+        
+        
         if (verbose)
         {
             cerr <<  "  Loading " << filein << ": ";
@@ -211,7 +218,8 @@ std::vector<int> merge_main_output(const std::vector<std::string> &folders,
     return last_step_nos;
 }
 
-void merge_datafile(const std::vector<std::string> &folders, const vector<int>& last_step_nos,
+void merge_datafile(const std::vector<std::string> &folders, 
+    bool folders_as_suffix, const vector<int>& last_step_nos,
     const std::string& filename, const std::string& merged_filename, int stride_size, bool verbose)
 {
     string str;
@@ -222,6 +230,10 @@ void merge_datafile(const std::vector<std::string> &folders, const vector<int>& 
     for (size_t i=0; i<folders.size(); ++i)
     {
         string filein = (folders[i] + "/" + filename );
+        if (folders_as_suffix)
+        {
+            filein = filename + "." + folders[i];
+        }
         if (verbose)
             cout <<  "  Loading " << filein << endl;
 
@@ -288,7 +300,8 @@ void merge_datafile(const std::vector<std::string> &folders, const vector<int>& 
 }
 
 
-void merge_mullfile(const std::vector<std::string> &folders, const vector<int>& last_step_nos,
+void merge_mullfile(const std::vector<std::string> &folders, 
+    bool folders_as_suffix, const vector<int>& last_step_nos,
     const std::string& filename, const std::string& merged_filename, int stride_size, bool convert_to_nac, bool verbose)
 {
     string str;
@@ -299,6 +312,10 @@ void merge_mullfile(const std::vector<std::string> &folders, const vector<int>& 
     for (size_t i=0; i<folders.size(); ++i)
     {
         string filein = (folders[i] + "/" + filename );
+        if (folders_as_suffix)
+        {
+            filein = filename + "." + folders[i];
+        }
         if (verbose)
             cout <<  "  Loading " << filein << endl;
 
