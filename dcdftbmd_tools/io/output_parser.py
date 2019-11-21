@@ -18,7 +18,7 @@ class OutputParser:
 
     def _parse_geom_opt(self, enumerator):
         for line_no, line in enumerator:
-            if 'Molecular coordinate [Angstrom]' in line or 'Final molecular coordinate [Angstrom]' in line:
+            if 'Molecular coordinate [Angstrom]' in line or 'Final molecular coordinate [Angstrom]' in line or 'Final molecular coordinate (angs)' in line:
                 next(enumerator)
                 next(enumerator)
                 next(enumerator)
