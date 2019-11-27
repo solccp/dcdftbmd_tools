@@ -21,6 +21,8 @@ matrix:
     env:
     - PATH=/c/Python36:/c/Python36/Scripts:$PATH 
       PIP=pip3
+      
+install: pip --version
 env:
   global:
   - TWINE_USERNAME: "__token__"
