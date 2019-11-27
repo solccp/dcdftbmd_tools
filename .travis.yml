@@ -3,7 +3,7 @@ matrix:
   include:
   - sudo: required
     services:
-    - docker
+      - docker
     env: DOCKER_IMAGE=quay.io/pypa/manylinux2010_x86_64 
          PLAT=manylinux2010_x86_64
          PIP=pip3 
