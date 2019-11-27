@@ -1,0 +1,29 @@
+language: python
+
+matrix:
+  include:
+    - sudo: required
+      services:
+        - docker
+      env: DOCKER_IMAGE=quay.io/pypa/manylinux1_x86_64
+           PLAT=manylinux1_x86_64
+    - sudo: required
+      services:
+        - docker
+      env: DOCKER_IMAGE=quay.io/pypa/manylinux2010_x86_64
+           PLAT=manylinux2010_x86_64
+    - os: osx
+      language: generic
+      env: PIP=pip3
+    - os: windows
+      language: shell
+      before_install:
+        - choco install python3 --version 3.6.8 --no-progress -y
+      env:
+        - PATH=/c/Python36:/c/Python36/Scripts:$PATH
+
+script:
+  - $PIP install cibuildwheel==1.0.0
+
+  # build the wheels, put them into './wheelhouse'
+  - cibuildwheel --output-dir wheelhouse

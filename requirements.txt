@@ -3,3 +3,4 @@ statsmodels>=0.9.0
 matplotlib>=3.0
 MDAnalysis>=0.19
 pymatgen>=2019.3.13
+PyQt5>=5.13

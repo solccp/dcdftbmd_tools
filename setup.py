@@ -4,7 +4,7 @@ import sys
 import setuptools
 import glob
 
-__version__ = '0.0.1'
+__version__ = '0.0.5'
 
 
 class get_pybind_include(object):
@@ -118,5 +118,10 @@ setup(
     cmdclass={'build_ext': BuildExt},
     zip_safe=False,
     packages=find_packages(),
+    classifiers=[
+        "Programming Language :: Python :: 3",
+        "Development Status :: 3 - Alpha",
+        "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)"
+    ],
     scripts=scripts_to_install
 )
