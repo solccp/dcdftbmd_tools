@@ -1,32 +1,35 @@
 language: python
-
+deploy:
+  provider: pypi
+  user: __token__
+  password:
+    secure: NcPltJqGFk4nGBM3GGfeK0mCxP8xEohflHKTBihNMWSp0WZ1mHLANQ7ZzKOKfAOwP6iZgbZsbnLwRl8Vjq53BqCtdhQsK/jlNCRJMb0EB50vKms+9NYLDt/TKNPJlcFAsLM7+WbFoOqEJnNfnqRNlvM5w/CMSJ/pbiqTyvii2WZQG/J0jNjXjiqteHQNpHawTf3q/lCcIlk+K0QQF2euCk4D8XhDp5Yb26xflHU6sugU7SS/BOCGoNJopiMKkySqyULdiVIbUwLyAAFUkTGyV/2v0DzR1zWLTpaBgurMo0OfTjZ7Y0p3jgJb87mOuI4RaQR35Jkd7F4i9P141JkQALyDplffhjmVpbSfAY/FSnPhB6tT112jyJGpf2bMB0BQbr+uVgPb/QtlRzfSgrLSPEeqEKWYf8/iscThwvmXMyj7Oems+/CZ9ZIXQF3vCpo9M0r5B88/LlTh91SZkJXBKjKQLf2vwUtOKhMy4kQPpUkcis1SvukSb1LGzsaxjtfuS9AyAsEyBhDmvyIXfGhGYmygjDSuBBNnTwMeuqgtLsDgUQfvG0W6uizCOHAq6uUiakwq4SDsMUvupcnzb3PefPEBzDZRbY8KOAvZu/wXi7eWrSIsIBhAXHtf11XpyhvP5gw+A9RL2bXScTSjiYxFXPl74yx0ovn/VvzedHNdnU4=
+  distributions: "bdist_wheel"
 matrix:
   include:
-    - sudo: required
-      services:
-        - docker
-      env: DOCKER_IMAGE=quay.io/pypa/manylinux2010_x86_64
-           PLAT=manylinux2010_x86_64
-           PIP=pip3
-           CIBW_BEFORE_BUILD="'yum -y install boost-devel'"
-      python: 3.6
-    - os: osx
-      language: generic
-      env: PIP=pip3
-      python: 3.6
-    - os: windows
-      language: shell
-      before_install:
-        - choco install python3 --version 3.6.8 --no-progress -y
-        - choco install boost-msvc-14.1
-      env:
-        - PATH=/c/Python36:/c/Python36/Scripts:$PATH
-          PIP=pip3
+  - sudo: required
+    services:
+    - docker
+    env: DOCKER_IMAGE=quay.io/pypa/manylinux2010_x86_64 PLAT=manylinux2010_x86_64
+      PIP=pip3 CIBW_BEFORE_BUILD="'yum -y install boost-devel'"
+    python: 3.6
+  - os: osx
+    language: generic
+    env: PIP=pip3
+    python: 3.6
+  - os: windows
+    language: shell
+    before_install:
+    - choco install python3 --version 3.6.8 --no-progress -y
+    - choco install boost-msvc-14.1
+    env:
+    - PATH=/c/Python36:/c/Python36/Scripts:$PATH PIP=pip3
 env:
   global:
-    - CIBW_BUILD: cp3?-*
-    - CIBW_SKIP: "'*-win32 *-manylinux_i686'"
-    - CIBW_BEFORE_BUILD: "'pip install pybind11'"
+  - CIBW_BUILD: cp3?-*
+  - CIBW_SKIP: "'*-win32 *-manylinux_i686'"
+  - CIBW_BEFORE_BUILD: "'pip install pybind11'"
 script:
-  - $PIP install cibuildwheel
-  - cibuildwheel --output-dir wheelhouse
+- "$PIP install cibuildwheel"
+- cibuildwheel --output-dir wheelhouse
+- ls -l wheelhouse
