@@ -20,8 +20,10 @@ matrix:
       env:
         - PATH=/c/Python36:/c/Python36/Scripts:$PATH
           PIP=pip3
-
+env:
+  global:
+    - CIBW_BEFORE_BUILD: pip install pybind11
+    - CIBW_BEFORE_BUILD: yum -y install boost-devel
 script:
   - $PIP install cibuildwheel==1.0
-  - $PIP install pybind11
   - cibuildwheel --output-dir wheelhouse
