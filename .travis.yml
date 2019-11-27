@@ -1,5 +1,8 @@
 language: python
-
+python:
+  - 3.5
+  - 3.6
+  - 3.7
 matrix:
   include:
     - sudo: required
@@ -20,5 +23,5 @@ matrix:
           PIP=pip3
 
 script:
-  - $PIP install cibuildwheel
+  - $PIP install cibuildwheel==1.0 pybind11
   - cibuildwheel --output-dir wheelhouse
