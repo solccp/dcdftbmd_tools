@@ -5,12 +5,6 @@ matrix:
     - sudo: required
       services:
         - docker
-      env: DOCKER_IMAGE=quay.io/pypa/manylinux1_x86_64
-           PLAT=manylinux1_x86_64
-           PIP=pip3
-    - sudo: required
-      services:
-        - docker
       env: DOCKER_IMAGE=quay.io/pypa/manylinux2010_x86_64
            PLAT=manylinux2010_x86_64
            PIP=pip3
@@ -26,5 +20,5 @@ matrix:
           PIP=pip3
 
 script:
-  - $PIP install cibuildwheel==1.0.0
+  - $PIP install cibuildwheel
   - cibuildwheel --output-dir wheelhouse
