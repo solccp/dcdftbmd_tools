@@ -22,5 +22,6 @@ matrix:
           PIP=pip3
 
 script:
-  - $PIP install cibuildwheel==1.0 pybind11
+  - $PIP install cibuildwheel==1.0
+  - $PIP install pybind11
   - cibuildwheel --output-dir wheelhouse
