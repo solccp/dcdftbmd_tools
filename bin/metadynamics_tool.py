@@ -781,6 +781,9 @@ class MTDTool(qtw.QMainWindow):
             self.time_slider.setMaximum(last_step)
             self.time_slider.setValue(last_step)
             self.update_plots(last_step)
+    def clean_data(self):
+        self.model = MetaDynamicsResultModel()
+        self.time_slider.setEnabled(False)
 
     def load_data_dialog(self):
         dialog = qtw.QFileDialog(self, 'Load Data Folder', pathlib.os.curdir)
@@ -805,6 +808,9 @@ if __name__ == '__main__':
     
     app = qtw.QApplication(sys.argv)
     tool = MTDTool()
-    tool.load_data(os.curdir)
+    try:
+        tool.load_data(os.curdir)
+    except:
+        pass
     sys.exit(app.exec_())
 

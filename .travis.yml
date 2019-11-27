@@ -21,7 +21,7 @@ matrix:
     env:
     - PATH=/c/Python36:/c/Python36/Scripts:$PATH 
       PIP=pip3
-      
+
 install: pip --version
 env:
   global:
@@ -35,5 +35,5 @@ script:
 - ls -l wheelhouse
 - |
     python -m pip install twine
-    python -m twine upload wheelhouse/*.whl
+    python -m twine upload --skip-existing wheelhouse/*.whl
     
