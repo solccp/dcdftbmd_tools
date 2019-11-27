@@ -5,13 +5,16 @@ deploy:
   password:
     secure: NcPltJqGFk4nGBM3GGfeK0mCxP8xEohflHKTBihNMWSp0WZ1mHLANQ7ZzKOKfAOwP6iZgbZsbnLwRl8Vjq53BqCtdhQsK/jlNCRJMb0EB50vKms+9NYLDt/TKNPJlcFAsLM7+WbFoOqEJnNfnqRNlvM5w/CMSJ/pbiqTyvii2WZQG/J0jNjXjiqteHQNpHawTf3q/lCcIlk+K0QQF2euCk4D8XhDp5Yb26xflHU6sugU7SS/BOCGoNJopiMKkySqyULdiVIbUwLyAAFUkTGyV/2v0DzR1zWLTpaBgurMo0OfTjZ7Y0p3jgJb87mOuI4RaQR35Jkd7F4i9P141JkQALyDplffhjmVpbSfAY/FSnPhB6tT112jyJGpf2bMB0BQbr+uVgPb/QtlRzfSgrLSPEeqEKWYf8/iscThwvmXMyj7Oems+/CZ9ZIXQF3vCpo9M0r5B88/LlTh91SZkJXBKjKQLf2vwUtOKhMy4kQPpUkcis1SvukSb1LGzsaxjtfuS9AyAsEyBhDmvyIXfGhGYmygjDSuBBNnTwMeuqgtLsDgUQfvG0W6uizCOHAq6uUiakwq4SDsMUvupcnzb3PefPEBzDZRbY8KOAvZu/wXi7eWrSIsIBhAXHtf11XpyhvP5gw+A9RL2bXScTSjiYxFXPl74yx0ovn/VvzedHNdnU4=
   distributions: "bdist_wheel"
+  skip_cleanup: true
+  local_dir: wheelhouse
+  upload-dir: wheelhouse
 matrix:
   include:
   - sudo: required
     services:
     - docker
     env: DOCKER_IMAGE=quay.io/pypa/manylinux2010_x86_64 PLAT=manylinux2010_x86_64
-      PIP=pip3 CIBW_BEFORE_BUILD="'yum -y install boost-devel'"
+      PIP=pip3 CIBW_BEFORE_BUILD="'pip install pybind11; yum -y install boost-devel'"
     python: 3.6
   - os: osx
     language: generic
