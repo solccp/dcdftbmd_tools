@@ -811,6 +811,6 @@ if __name__ == '__main__':
     try:
         tool.load_data(os.curdir)
     except:
-        pass
+        tool.clean_data()
     sys.exit(app.exec_())
 
