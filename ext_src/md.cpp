@@ -11,8 +11,6 @@
 #include <cctype>
 #include <locale>
 
-#include "include/fmt/format.h"
-
 
 static bool startsWith(const std::string& s, const std::string& prefix) {
     return s.size() >= prefix.size() && s.compare(0, prefix.size(), prefix) == 0;
@@ -54,7 +52,10 @@ split_vector_type split(const std::string& s, char delimiter)
    std::istringstream tokenStream(s);
    while (std::getline(tokenStream, token, delimiter))
    {
-      tokens.push_back(token);
+       if (token.empty()){
+           continue;
+       }
+       tokens.push_back(token);
    }
    return tokens;
 }
@@ -89,10 +90,10 @@ std::vector<int> merge_main_output(const std::vector<std::string> &folders,
     if (write_parsed_data)
     {
         fout_data.open(merged_data_filename);
-
-        fout_data << fmt::format("{:<10s} {:<7s} {:<8s} {:<14s} {:<20s} {:<20s} {:<20s}"
-            ,"#Time(fs)", "Step", "#Sub.Sys", "Temperature(K)", "Pot. Energy(H)", "Kinetic Energy(H)", "MD Energy(H)")
-            << std::endl; 
+        char buff[200];
+        snprintf(buff, sizeof(buff), "# %10s %7s %8s %14s %20s %20s %20s", 
+        "Time(fs)", "Step", "#Sub.Sys", "Temperature(K)", "Pot. Energy(H)", "Kinetic Energy(H)", "MD Energy(H)");
+        fout_data << std::string(buff) << std::endl;
     }
 
     bool write_header = false;
@@ -144,14 +145,14 @@ std::vector<int> merge_main_output(const std::vector<std::string> &folders,
             {
                 split_vector_type SplitVec; 
                 SplitVec = split( str, ' ');
-                no_subsystems = std::stoi(SplitVec[6]) ;
+                no_subsystems = std::stoi(SplitVec[5]) ;
                 buffer << str << endl;
             }
             else if (startsWith(str, "    Final") && contains(str, "iterations"))
             {
                 split_vector_type SplitVec; 
                 SplitVec = split( str, ' ');
-                step_potEne = std::stod(SplitVec[5]) ;
+                step_potEne = std::stod(SplitVec[4]) ;
                 buffer << str << endl;
             }
             else if (startsWith(str, " *** AT T="))
@@ -161,8 +162,8 @@ std::vector<int> merge_main_output(const std::vector<std::string> &folders,
 
                 split_vector_type SplitVec; 
                 SplitVec = split( str, ' ');
-                step_no = std::stoi(SplitVec[10]) ;
-                step_time = std::stod(SplitVec[4]) ;
+                step_no = std::stoi(SplitVec[9]) ;
+                step_time = std::stod(SplitVec[3]) ;
 
                 if (first)
                 {
@@ -188,13 +189,13 @@ std::vector<int> merge_main_output(const std::vector<std::string> &folders,
                         switch (i)
                         {
                             case 1:
-                                step_temperature = std::stod(SplitVec[3]) ;
+                                step_temperature = std::stod(SplitVec[2]) ;
                                 break;
                             case 2:
-                                step_kinEne = std::stod(SplitVec[4]) ;
+                                step_kinEne = std::stod(SplitVec[3]) ;
                                 break;
                             case 3:
-                                step_mdEne = std::stod(SplitVec[5]) ;
+                                step_mdEne = std::stod(SplitVec[4]) ;
                                 break;
                             default:
                                 break;
@@ -238,8 +239,10 @@ std::vector<int> merge_main_output(const std::vector<std::string> &folders,
 
                 if (write_parsed_data)
                 {
-                    fout_data << fmt::format("{:<10.2f} {:<7d} {:<8d} {:14.4f} {:<20.12f} {:<20.12f} {:<20.12f}", 
-                    step_time, step_no, no_subsystems, step_temperature, step_potEne, step_kinEne,step_mdEne) << std::endl; 
+                    char buff[200];
+                    snprintf(buff, sizeof(buff), "  %10.4lf %7d %8d %14.4lf %20.12lf %20.12lf %20.12lf", 
+                    step_time, step_no, no_subsystems, step_temperature, step_potEne, step_kinEne,step_mdEne);
+                    fout_data << std::string(buff) << std::endl;
                 }
             }
             else
@@ -307,7 +310,7 @@ void merge_datafile(const std::vector<std::string> &folders,
             
             split_vector_type SplitVec; 
             SplitVec = split( str, ' ');
-            int step_no = std::stoi(SplitVec[10]) ;
+            int step_no = std::stoi(SplitVec[9]) ;
 
             // cout << step_no << endl;
             if (i==0)
@@ -391,7 +394,7 @@ void merge_mullfile(const std::vector<std::string> &folders,
             
             split_vector_type SplitVec; 
             SplitVec = split( str, ' ');
-            int step_no = std::stoi(SplitVec[10]) ;
+            int step_no = std::stoi(SplitVec[9]) ;
 
             // cout << step_no << endl;
             if (i==0)
@@ -441,13 +444,17 @@ void merge_mullfile(const std::vector<std::string> &folders,
                         }
                         else
                         {
-                            fout << fmt::format("{:<4s} {:14.8f}", cur_sym, cur_charge) << std::endl;
+                            char buff[200];
+                            snprintf(buff, sizeof(buff), "%-4s %14.8f", cur_sym.c_str(), cur_charge);
+                            fout << std::string(buff) << std::endl;
                             cur_charge = charge;
                             cur_atom = ind_atom;
                             cur_sym = sym;
                         }
                     }
-                    fout << fmt::format("{:<4s} {:14.8f}", cur_sym, cur_charge) << std::endl;
+                    char buff[200];
+                    snprintf(buff, sizeof(buff), "%-4s %14.8f", cur_sym.c_str(), cur_charge);
+                    fout << std::string(buff) << std::endl;
                     getline(fin, str);
                 }
                 else
