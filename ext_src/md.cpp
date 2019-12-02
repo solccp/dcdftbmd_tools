@@ -7,20 +7,61 @@
 #include <fstream>
 #include <sstream>
 
-#include <boost/algorithm/string.hpp>
-#include <boost/lexical_cast.hpp>
-#include <boost/algorithm/string/split.hpp>
-#include <boost/format.hpp>
+#include <algorithm> 
+#include <cctype>
+#include <locale>
+
+#include "include/fmt/format.h"
 
 
+static bool startsWith(const std::string& s, const std::string& prefix) {
+    return s.size() >= prefix.size() && s.compare(0, prefix.size(), prefix) == 0;
+}
+
+static bool contains(const std::string& s1, const std::string& s2){
+    if (s1.find(s2) != std::string::npos) {
+        return true;
+    }
+    return false;
+}
+
+// trim from start (in place)
+static inline void ltrim(std::string &s) {
+    s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](int ch) {
+        return !std::isspace(ch);
+    }));
+}
+
+// trim from end (in place)
+static inline void rtrim(std::string &s) {
+    s.erase(std::find_if(s.rbegin(), s.rend(), [](int ch) {
+        return !std::isspace(ch);
+    }).base(), s.end());
+}
+
+// trim from both ends (in place)
+static inline void trim(std::string &s) {
+    ltrim(s);
+    rtrim(s);
+}
+
+typedef std::vector< std::string > split_vector_type;
+
+split_vector_type split(const std::string& s, char delimiter)
+{
+   split_vector_type tokens;
+   std::string token;
+   std::istringstream tokenStream(s);
+   while (std::getline(tokenStream, token, delimiter))
+   {
+      tokens.push_back(token);
+   }
+   return tokens;
+}
 
 namespace py = pybind11;
 using namespace std;
-using namespace boost;
-typedef vector< string > split_vector_type;
-using boost::lexical_cast;
-using boost::format;
-using boost::io::group;
+
 
 // parse and merge the main dcdftbmd output
 // args:
@@ -48,8 +89,10 @@ std::vector<int> merge_main_output(const std::vector<std::string> &folders,
     if (write_parsed_data)
     {
         fout_data.open(merged_data_filename);
-        fout_data << format("%1$-10s %2$-7s %3$-8s %4$-14s %5$-20s %6$-20s %7$-20s") % "#Time(fs)" % "Step" %
-                    "#Sub.Sys" % "Temperature(K)" % "Pot. Energy(H)" % "Kinetic Energy(H)" % "MD Energy(H)" << endl; 
+
+        fout_data << fmt::format("{:<10s} {:<7s} {:<8s} {:<14s} {:<20s} {:<20s} {:<20s}"
+            ,"#Time(fs)", "Step", "#Sub.Sys", "Temperature(K)", "Pot. Energy(H)", "Kinetic Energy(H)", "MD Energy(H)")
+            << std::endl; 
     }
 
     bool write_header = false;
@@ -86,7 +129,7 @@ std::vector<int> merge_main_output(const std::vector<std::string> &folders,
 
         while (getline(fin, str))
         {
-            if (starts_with(str, "  *** Start molecular dynamics ***"))
+            if (startsWith(str, "  *** Start molecular dynamics ***"))
             {
                 if (write_header == false)
                 {
@@ -97,29 +140,29 @@ std::vector<int> merge_main_output(const std::vector<std::string> &folders,
                 }
                 buffer.str("");
             }
-            else if (starts_with(str,"  ***  Number of subsystems ="))
+            else if (startsWith(str,"  ***  Number of subsystems ="))
             {
                 split_vector_type SplitVec; 
-                split( SplitVec, str, is_any_of(" "), token_compress_on );
-                no_subsystems = lexical_cast<int>(SplitVec[6]) ;
+                SplitVec = split( str, ' ');
+                no_subsystems = std::stoi(SplitVec[6]) ;
                 buffer << str << endl;
             }
-            else if (starts_with(str, "    Final") && contains(str, "iterations"))
+            else if (startsWith(str, "    Final") && contains(str, "iterations"))
             {
                 split_vector_type SplitVec; 
-                split( SplitVec, str, is_any_of(" "), token_compress_on );
-                step_potEne = lexical_cast<double>(SplitVec[5]) ;
+                SplitVec = split( str, ' ');
+                step_potEne = std::stod(SplitVec[5]) ;
                 buffer << str << endl;
             }
-            else if (starts_with(str, " *** AT T="))
+            else if (startsWith(str, " *** AT T="))
             {
                 vector<string> t_lines;
                 t_lines.push_back(str);             
 
                 split_vector_type SplitVec; 
-                split( SplitVec, str, is_any_of(" "), token_compress_on );
-                step_no = lexical_cast<int>(SplitVec[10]) ;
-                step_time = lexical_cast<double>(SplitVec[4]) ;
+                SplitVec = split( str, ' ');
+                step_no = std::stoi(SplitVec[10]) ;
+                step_time = std::stod(SplitVec[4]) ;
 
                 if (first)
                 {
@@ -141,17 +184,17 @@ std::vector<int> merge_main_output(const std::vector<std::string> &folders,
                     {
                         getline(fin, str);
                         split_vector_type SplitVec; 
-                        split( SplitVec, str, is_any_of(" "), token_compress_on );
+                        SplitVec = split( str, ' ');
                         switch (i)
                         {
                             case 1:
-                                step_temperature = lexical_cast<double>(SplitVec[3]) ;
+                                step_temperature = std::stod(SplitVec[3]) ;
                                 break;
                             case 2:
-                                step_kinEne = lexical_cast<double>(SplitVec[4]) ;
+                                step_kinEne = std::stod(SplitVec[4]) ;
                                 break;
                             case 3:
-                                step_mdEne = lexical_cast<double>(SplitVec[5]) ;
+                                step_mdEne = std::stod(SplitVec[5]) ;
                                 break;
                             default:
                                 break;
@@ -195,13 +238,13 @@ std::vector<int> merge_main_output(const std::vector<std::string> &folders,
 
                 if (write_parsed_data)
                 {
-                    fout_data << format("%1$-10.2f %2$-7d %3$-8d %4$14.4f %5$-20.12f %6$-20.12f %7$-20.12f") % step_time % step_no %
-                    no_subsystems % step_temperature % step_potEne % step_kinEne % step_mdEne << endl; 
+                    fout_data << fmt::format("{:<10.2f} {:<7d} {:<8d} {:14.4f} {:<20.12f} {:<20.12f} {:<20.12f}", 
+                    step_time, step_no, no_subsystems, step_temperature, step_potEne, step_kinEne,step_mdEne) << std::endl; 
                 }
             }
             else
             {
-                buffer << str << endl;
+                buffer << str << std::endl;
             }
         }
         if (write_merged)
@@ -252,8 +295,8 @@ void merge_datafile(const std::vector<std::string> &folders,
                 first_line = false;
                 split_vector_type SplitVec; 
                 trim(str);
-                split( SplitVec, str, is_any_of(" "), token_compress_on );    
-                nat = lexical_cast<int>(SplitVec[0]) ;                
+                SplitVec = split( str, ' ');
+                nat = std::stoi(SplitVec[0]) ;                
             }          
                         
             getline(fin, str);
@@ -263,8 +306,8 @@ void merge_datafile(const std::vector<std::string> &folders,
             bool to_write = true;
             
             split_vector_type SplitVec; 
-            split( SplitVec, str, is_any_of(" "), token_compress_on );
-            int step_no = lexical_cast<int>(SplitVec[10]) ;
+            SplitVec = split( str, ' ');
+            int step_no = std::stoi(SplitVec[10]) ;
 
             // cout << step_no << endl;
             if (i==0)
@@ -335,9 +378,9 @@ void merge_mullfile(const std::vector<std::string> &folders,
                 first_line = false;
                 split_vector_type SplitVec; 
                 trim(str);
-                split( SplitVec, str, is_any_of(" "), token_compress_on );    
-                norb = lexical_cast<int>(SplitVec[0]) ;  
-                nat = lexical_cast<int>(SplitVec[1]) ;               
+                SplitVec = split( str, ' ');
+                norb = std::stoi(SplitVec[0]) ;  
+                nat = std::stoi(SplitVec[1]) ;               
             }          
                         
             getline(fin, str);
@@ -347,8 +390,8 @@ void merge_mullfile(const std::vector<std::string> &folders,
             bool to_write = true;
             
             split_vector_type SplitVec; 
-            split( SplitVec, str, is_any_of(" "), token_compress_on );
-            int step_no = lexical_cast<int>(SplitVec[10]) ;
+            SplitVec = split( str, ' ');
+            int step_no = std::stoi(SplitVec[10]) ;
 
             // cout << step_no << endl;
             if (i==0)
@@ -398,13 +441,13 @@ void merge_mullfile(const std::vector<std::string> &folders,
                         }
                         else
                         {
-                            fout << format("%1$-4s %2$14.8f") % cur_sym % cur_charge << endl;
+                            fout << fmt::format("{:<4s} {:14.8f}", cur_sym, cur_charge) << std::endl;
                             cur_charge = charge;
                             cur_atom = ind_atom;
                             cur_sym = sym;
                         }
                     }
-                    fout << format("%1$-4s %2$14.8f") % cur_sym % cur_charge << endl;
+                    fout << fmt::format("{:<4s} {:14.8f}", cur_sym, cur_charge) << std::endl;
                     getline(fin, str);
                 }
                 else
@@ -447,7 +490,7 @@ void stride_xyz(const std::string& input, const std::string& output, int size)
         {
             trim(str);
             fout << str << endl;
-            int nat = boost::lexical_cast<int>(str);
+            int nat = std::stoi(str);
             getline(fin, str);
             fout << str << endl;
             for (int i=0; i<nat; ++i)
@@ -459,7 +502,7 @@ void stride_xyz(const std::string& input, const std::string& output, int size)
         else
         {
             trim(str);
-            int nat = boost::lexical_cast<int>(str);
+            int nat = std::stoi(str);
             getline(fin, str);
             for (int i=0; i<nat; ++i)
             {
