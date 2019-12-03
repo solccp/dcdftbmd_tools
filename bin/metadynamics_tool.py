@@ -7,10 +7,13 @@ import matplotlib
 import matplotlib.pylab as plt
 import math
 
-import PyQt5.QtWidgets as qtw
-from PyQt5.QtGui import QIcon,  QRegExpValidator
-from PyQt5.QtCore import Qt, QStringListModel, QRegExp, QThread, pyqtSignal
 
+import PyQt5.QtWidgets as qtw
+from PyQt5.QtGui import QIcon,  QRegExpValidator, QFont
+from PyQt5.QtCore import Qt, QStringListModel, QRegExp, QThread, pyqtSignal
+from PyQt5 import QtCore
+
+import pyqtgraph as pg
 from scipy.signal import find_peaks
 
 import pathlib
@@ -152,6 +155,70 @@ class CVHeightWindow(qtw.QWidget):
         self.line = self.axis.plot([x_pos, x_pos], [self.ylim[0], self.ylim[1]], '--', color='red')
         self.canvas.draw()
 
+class CustomAxis(pg.AxisItem):
+    @property
+    def nudge(self):
+        if not hasattr(self, "_nudge"):
+            self._nudge = 0
+        return self._nudge
+
+    @nudge.setter
+    def nudge(self, nudge):
+        self._nudge = nudge
+        s = self.size()
+        # call resizeEvent indirectly
+        self.resize(s + QtCore.QSizeF(1, 1))
+        self.resize(s)
+
+    def resizeEvent(self, ev=None):
+        # s = self.size()
+
+        ## Set the position of the label
+        nudge = self.nudge
+        br = self.label.boundingRect()
+        p = QtCore.QPointF(0, 0)
+        if self.orientation == "left":
+            p.setY(int(self.size().height() / 2 + br.width() / 2))
+            p.setX(-nudge)
+        elif self.orientation == "right":
+            p.setY(int(self.size().height() / 2 + br.width() / 2))
+            p.setX(int(self.size().width() - br.height() + nudge))
+        elif self.orientation == "top":
+            p.setY(-nudge)
+            p.setX(int(self.size().width() / 2.0 - br.width() / 2.0))
+        elif self.orientation == "bottom":
+            p.setX(int(self.size().width() / 2.0 - br.width() / 2.0))
+            p.setY(int(self.size().height() - br.height() + nudge))
+        self.label.setPos(p)
+        # print(p)
+        self.picture = None
+
+    def _updateWidth(self):
+        
+        if not self.isVisible():
+            w = 0
+        else:
+            if self.fixedWidth is None:
+                if not self.style['showValues']:
+                    w = 0
+                elif self.style['autoExpandTextSpace'] is True:
+                    w = self.textWidth
+                else:
+                    w = self.style['tickTextWidth']
+                w += self.style['tickTextOffset'][0] if self.style['showValues'] else 0
+                w += max(0, self.style['tickLength'])
+                if self.label.isVisible():
+                    w += self.label.boundingRect().height() * 1.2 ## Modified
+            else:
+                w = self.fixedWidth
+        
+        self.setMaximumWidth(w)
+        self.setMinimumWidth(w)
+        self.picture = None
+        
+        
+
+
 class FESWindow(qtw.QWidget):
     def __init__(self):
         super().__init__()
@@ -160,13 +227,39 @@ class FESWindow(qtw.QWidget):
     def initUI(self):
         self.layout = qtw.QVBoxLayout(self)
         self.setLayout(self.layout)
-        self.figure = plt.figure()
-        self.canvas = FigureCanvas(self.figure)
-        self.axis = self.figure.add_subplot(1,1,1)
-        self.figure.subplots_adjust(top=0.950, bottom=0.15, left=0.1, right=0.95)
-        self.toolbar = NavigationToolbar(self.canvas, self)
-        self.layout.addWidget(self.toolbar)
+        self.canvas = pg.PlotWidget(axisItems={"left": CustomAxis(orientation="left")})
+        self.canvas.setBackground('w')
+        # self.figure = plt.figure()
+        # self.canvas = FigureCanvas(self.figure)
+        # self.axis = self.figure.add_subplot(1,1,1)
+        # self.figure.subplots_adjust(top=0.950, bottom=0.15, left=0.1, right=0.95)
+        # self.toolbar = NavigationToolbar(self.canvas, self)
+        # self.layout.addWidget(self.toolbar)
+        self.curve = None
         self.layout.addWidget(self.canvas)
+
+        self.axis_labelStyle = {'font-size': '16pt', 'color': 'black'}
+        # self.axis_tickStyle = {'font-size': '16pt', 'color': 'black', 'tickLength':10}
+        self.canvas.setLabel('left', 'Free energy', units='kcal/mol', **self.axis_labelStyle )
+        font = QFont()
+        font.setPointSize(14)
+
+        self.canvas.getAxis("bottom").tickFont = font
+        self.canvas.getAxis("left").tickFont = font
+        self.canvas.getAxis("bottom").setStyle(tickLength=10, tickTextOffset = 10)
+        self.canvas.getAxis("left").setStyle(tickLength=10, tickTextOffset = 10)
+        # self.canvas.getAxis("bottom").setStyle()
+        # self.canvas.getAxis("left").setStyle(tickTextOffset = 20)
+
+        pen = pg.mkPen(color=(0,0,0), width=5)
+        self.canvas.plotItem.getAxis('left').setPen(pen)
+        self.canvas.plotItem.getAxis('bottom').setPen(pen)
+        # self.canvas.getAxis("left").setWidth(120)
+        self.canvas.getAxis("left").enableAutoSIPrefix(False)
+
+        self.lines = []
+        # self.canvas.re
+
 
     def find_minima_barriers(self, coords, values):
         maxima, _ = find_peaks(values)
@@ -185,12 +278,21 @@ class FESWindow(qtw.QWidget):
         if (len(coords[0]) == 1):
             xs = [x[0] for x in coords]
             
-            self.axis.cla()
-            self.axis.plot(xs, values)
+            if self.curve is None:
+                pen = pg.mkPen(color=(0, 0, 255), width=5)
+                self.curve = self.canvas.plot(xs, values, pen=pen, antialias=True)
+                self.canvas.setLabel('bottom', model.cvs[0], **self.axis_labelStyle)
+            else:
+                self.curve.setData(xs, values)
+            
+            # self.axis.cla()
+            # self.axis.plot(xs, values)
 
-            self.axis.set_xlabel(model.cvs[0])
-            self.axis.set_ylabel('Free energy [kcal/mol]')
-  
+            # self.axis.set_xlabel(model.cvs[0])
+            # self.axis.set_ylabel('Free energy [kcal/mol]')
+
+            for item in self.lines:
+                self.canvas.removeItem(item)
 
             index = zip(minima,minima[1:])
             for step, ind in enumerate(index):
@@ -201,8 +303,13 @@ class FESWindow(qtw.QWidget):
                 x_max = xs[ind_min_2]
                 x_width = x_max-x_min
                 y_max = values[ind_max]
-                self.axis.plot([x_min, x_max], [y_max, y_max], '--' )
 
+
+                line = self.canvas.plot([x_min, x_max], [y_max, y_max], pen = pg.mkPen(color=(255, 128, 0), width=3, style=QtCore.Qt.DashLine))
+                
+                # line = self.canvas.addLine(y=y_max)
+                self.lines.append(line)
+                # print(line.angle)
                 min_1_x_pos = xs[ind_min_1]
                 min_1_y_pos = values[ind_min_1]
                 min_2_x_pos = xs[ind_min_2]
@@ -210,22 +317,24 @@ class FESWindow(qtw.QWidget):
 
                 energy_1 = y_max - min_1_y_pos
                 energy_2 = y_max - min_2_y_pos
-    
-                self.axis.annotate('', xy=(min_1_x_pos, min_1_y_pos), xytext=(min_1_x_pos, y_max), arrowprops=dict(arrowstyle='<|-|>'))
-                
-                self.axis.text(min_1_x_pos+x_width*0.01, (min_1_y_pos+y_max)/2.0, '{:.2f}'.format(energy_1), fontsize=9, 
-                horizontalalignment='left', verticalalignment='center', bbox=dict(boxstyle='square,pad=0.1', fc='w', ec='none'))
 
-                self.axis.annotate('', xy=(min_2_x_pos, min_2_y_pos), xytext=(min_2_x_pos, y_max), arrowprops=dict(arrowstyle='<|-|>'))
-                self.axis.text(min_2_x_pos-x_width*0.01, (min_2_y_pos+y_max)/2.0, '{:.2f}'.format(energy_2), fontsize=9, 
-                horizontalalignment='right', verticalalignment='center', bbox=dict(boxstyle='square,pad=0.1', fc='w', ec='none'))           
-            
-            
-            self.canvas.draw()
+                line = self.canvas.plot([min_1_x_pos, min_1_x_pos], [min_1_y_pos, y_max], pen = pg.mkPen(color=(0, 0, 0), width=3, style=QtCore.Qt.SolidLine))
+                self.lines.append(line)
+                
+                label1 = pg.TextItem('{:.2f}'.format(energy_1), anchor=(0.0, 0.5), color=(0,0,0))
+                label1.setPos(min_1_x_pos, (y_max+min_1_y_pos)*0.5)
+                self.lines.append(label1)
+                self.canvas.addItem(label1)
+
+                line = self.canvas.plot([min_2_x_pos, min_2_x_pos], [min_2_y_pos, y_max], pen = pg.mkPen(color=(0, 0, 0), width=3, style=QtCore.Qt.SolidLine))
+                self.lines.append(line)
+                label2 = pg.TextItem('{:.2f}'.format(energy_2), anchor=(1.0, 0.5), color=(0,0,0))
+                label2.setPos(min_2_x_pos, (y_max+min_2_y_pos)*0.5)
+                self.lines.append(label2)
+                self.canvas.addItem(label2)
+                               
         else:
             raise RuntimeError('More than 1D FES plotting is not implemented')
-
-
 class PropertySelectionWidget(qtw.QDialog):
     def __init__(self, model, parent=None, flags=Qt.WindowFlags()):
         super().__init__(parent=parent, flags=flags)
@@ -810,7 +919,8 @@ if __name__ == '__main__':
     tool = MTDTool()
     try:
         tool.load_data(os.curdir)
-    except:
+    except Exception as e:
+        print(e)
         tool.clean_data()
     sys.exit(app.exec_())
 
