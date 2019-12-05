@@ -2,27 +2,21 @@
 
 import sys
 import os
-import numpy as np
-import matplotlib
-import matplotlib.pylab as plt
 import math
+import pathlib
 
+import numpy as np
+from scipy.signal import find_peaks
 
 import PyQt5.QtWidgets as qtw
-from PyQt5.QtGui import QIcon,  QRegExpValidator, QFont
+from PyQt5.QtGui import QIcon,  QRegExpValidator, QFont, QColor
 from PyQt5.QtCore import Qt, QStringListModel, QRegExp, QThread, pyqtSignal
 from PyQt5 import QtCore
 
 import pyqtgraph as pg
-from scipy.signal import find_peaks
-
-import pathlib
-matplotlib.use('QT5Agg')
-matplotlib.rcParams["figure.dpi"] = 200.0
-matplotlib.rcParams["figure.figsize"] = [10, 6]
-
-from matplotlib.backends.backend_qt5agg import FigureCanvas
-from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
+from pyqtgraph.graphicsItems.LegendItem import ItemSample
+from pyqtgraph.graphicsItems.LegendItem import LegendItem
+from pyqtgraph.graphicsItems.LabelItem import LabelItem
 
 class External(QThread):
     finished = pyqtSignal()
@@ -30,16 +24,15 @@ class External(QThread):
     def __init__(self, callback, parent=None):
         super().__init__(parent=parent)
         self.callback = callback
-    
-        
-
+ 
     def run(self):
         self.callback()  
         self.finished.emit()
 
 class Actions(qtw.QDialog):
-    def __init__(self, callback):
+    def __init__(self, label, callback):
         super().__init__()
+        self.label = label
         self.initUI()
         self.calc = External(callback)
         self.calc.finished.connect(self.onFinished)
@@ -47,113 +40,231 @@ class Actions(qtw.QDialog):
         
     def initUI(self):
         self.setWindowTitle('Progress Bar')
-        self.progress = qtw.QProgressBar(self)
+        self.layout = qtw.QVBoxLayout(self)
+        self.progress = qtw.QProgressBar()
+        
         self.progress.setGeometry(0, 0, 300, 25)
         self.progress.setMinimum(0)
         self.progress.setMaximum(0)
         self.progress.setValue(0)
+
+        self.layout.addWidget(self.progress)
+        self.layout.addWidget(qtw.QLabel(self.label))
         self.show()
 
     def onFinished(self):
         self.done(1)
         
 
-class CVCoordWindow(qtw.QWidget):
-    def __init__(self):
-        super().__init__()
-        self.initUI()
-        self.model = None
-        self.line = None
-
-    def initUI(self):
-        self.layout = qtw.QVBoxLayout(self)
-        self.setLayout(self.layout)
-        self.figure = plt.figure()
-        self.figure.subplots_adjust(top=0.950, bottom=0.15, left=0.1, right=0.95)
-        self.canvas = FigureCanvas(self.figure)
-        self.toolbar = NavigationToolbar(self.canvas, self)
-        self.axis = self.figure.add_subplot(1,1,1)
-        # self.figure.tight_layout()
-        self.layout.addWidget(self.toolbar)
-        self.layout.addWidget(self.canvas)
-
-    def plot(self, step, model):
-        if (self.model == model):
-            pass
-        else:
-            self.model = model
-
-            self.axis.cla()
-            
-            xs = [self.model.gaussian_interval_time*x/1000.0 for x in range(len(self.model.gau_pots))]
-            for i in range(len(self.model.gau_pots[0])):
-                values = [x[i].cv_coord for x in self.model.gau_pots]
-                self.axis.plot(xs, values, label='CV{}'.format(i+1))
-            
-            self.axis.set_xlabel('Time [ps]')
-            self.axis.set_ylabel('CV1 [{}]'.format(self.model.cvs[0]))
-            self.ylim = self.axis.get_ylim()
-            self.axis.legend()
-             
-        if (self.line):
-            self.axis.lines.pop()
-            self.line = None
-
-        x_pos = self.model.gaussian_interval_time*(step+1)/1000.0
+class MyItemSample(ItemSample):
+    def __init__(self, item):
+        ItemSample.__init__(self, item)
+          
+    def paint(self, p, *args):
+        #p.setRenderHint(p.Antialiasing)  # only if the data is antialiased.
+        opts = self.item.opts
         
+        if opts.get('fillLevel',None) is not None and opts.get('fillBrush',None) is not None:
+            p.setBrush(pg.mkBrush(opts['fillBrush']))
+            p.setPen(pg.mkPen(None))
+            p.drawPolygon(QtGui.QPolygonF([QtCore.QPointF(2,18), QtCore.QPointF(18,2), QtCore.QPointF(18,18)]))
         
-        self.line = self.axis.plot([x_pos, x_pos], [self.ylim[0], self.ylim[1]], '--', color='red')
-        self.canvas.draw()
-
-
-
-
-class CVHeightWindow(qtw.QWidget):
-    def __init__(self):
-        super().__init__()
-        self.initUI()
-        self.model = None
-        self.line = None
-
-    def initUI(self):
-        self.layout = qtw.QVBoxLayout(self)
-        self.setLayout(self.layout)
-        self.figure = plt.figure()
-        self.canvas = FigureCanvas(self.figure)
-        self.figure.subplots_adjust(top=0.950, bottom=0.15, left=0.1, right=0.95)
-        self.toolbar = NavigationToolbar(self.canvas, self)
-        self.axis = self.figure.add_subplot(1,1,1)
-        self.layout.addWidget(self.toolbar)
-        self.layout.addWidget(self.canvas)
-
-    def plot(self, step, model):
-        if (self.model == model):
-            pass
-        else:
-
-            self.model = model
-
-            self.axis.cla()
+        if not isinstance(self.item, pg.ScatterPlotItem):
+            p.setPen(pg.mkPen(opts['pen']))
+            p.drawLine(2, 25, 36, 25)
+        
+        symbol = opts.get('symbol', None)
+        if symbol is not None:
+            if isinstance(self.item, pg.PlotDataItem):
+                opts = self.item.scatter.opts
+                
+            pen = pg.mkPen(opts['pen'])
+            brush = pg.mkBrush(opts['brush'])
+            size = opts['size']
             
-            xs = [self.model.gaussian_interval_time*x/1000.0 for x in range(len(self.model.gau_pots))]
-            for i in range(len(self.model.gau_pots[0])):
-                values = [x[i].height*627.5095 for x in self.model.gau_pots]
-                self.axis.plot(xs, values, label='CV{}'.format(i+1))
-            
-            self.axis.set_xlabel('Time [ps]')
-            self.axis.set_ylabel('Gaussian Height of CV1 [kcal/mol]')
-            self.ylim = self.axis.get_ylim()
-            self.axis.legend()
-            
-             
-        if (self.line):
-            self.axis.lines.pop()
-            self.line = None
+            p.translate(10,10)
+            path = pg.ScatterPlotItem.drawSymbol(p, symbol, size, pen, brush)
+        
+class MyLegendItem(LegendItem):
+    def __init__(self, size=None, offset=None):
+        LegendItem.__init__(self, size, offset)
+        self.layout.setColumnSpacing(0, 60)
     
-        x_pos = self.model.gaussian_interval_time*(step+1)/1000.0
+    def paint(self, p, *args):
+        p.setPen(pg.mkPen(255,255,255,100))
+        p.setBrush(pg.mkBrush(255,255,255,255))
+        p.drawRect(self.boundingRect())
+
+    def addItem(self, item, name):
+        """
+        Add a new entry to the legend. 
+
+        ==============  ========================================================
+        **Arguments:**
+        item            A PlotDataItem from which the line and point style
+                        of the item will be determined or an instance of
+                        ItemSample (or a subclass), allowing the item display
+                        to be customized.
+        title           The title to display for this item. Simple HTML allowed.
+        ==============  ========================================================
+        """
+        label = LabelItem()
+        label.setText(name, size='16pt', color=(0,0,0))
         
-        self.line = self.axis.plot([x_pos, x_pos], [self.ylim[0], self.ylim[1]], '--', color='red')
-        self.canvas.draw()
+        if isinstance(item, ItemSample):
+            sample = item
+        else:
+            sample = ItemSample(item)        
+        row = self.layout.rowCount()
+        self.items.append((sample, label))
+        self.layout.addItem(sample, row, 0)
+        self.layout.addItem(label, row, 1)
+        self.layout.setRowAlignment(row, Qt.AlignVCenter)
+        self.updateSize()
+
+
+class TimeCourseDataModel():
+    def __init__(self, name, times, values, value_label, value_unit):
+        self.name = name
+        self.times = times
+        self.values = values
+        self.value_label = value_label
+        self.value_unit = value_unit
+
+class CVHeightAdpater:
+    H2kcalmol = 627.5095
+    def __init__(self, model, cv_index):
+        self.model = model
+        self.cv_index = cv_index
+        self.name = 'CV{}'.format(cv_index+1)
+        self.times = None 
+        self.values = None
+        self.value_unit = 'kcal/mol'
+        self.value_label = 'Gaussian Height of {}'.format(self.name)
+
+    def get_times(self):
+        if self.times is None:
+            self.times = [self.model.gaussian_interval_time*(i+1) for i in range(len(self.model.get_gau_pots()))]
+        return self.times
+        
+    def get_values(self):
+        if self.values is None:
+            self.values = [x.height*self.H2kcalmol for x in self.model.get_gau_pots()]
+        return self.values
+
+class CVCoordAdpater:
+    def __init__(self, model, cv_index):
+        self.model = model
+        self.cv_index = cv_index
+        self.name = 'CV{}'.format(cv_index+1)
+        self.times = None 
+        self.values = None
+        self.value_unit = self.model.get_cvs()[0][0]
+        self.value_label = self.name
+
+    def get_times(self):
+        if self.times is None:
+            self.times = [self.model.gaussian_interval_time*(i+1) for i in range(len(self.model.get_gau_pots()))]
+        return self.times
+        
+    def get_values(self):
+        if self.values is None:
+            self.values = [x.cv_coords[self.cv_index] for x in self.model.get_gau_pots()]
+        return self.values
+
+class OneDTimeWindow(qtw.QWidget):
+    def __init__(self):
+        super().__init__()
+        
+        self.color_map = ['#1f77b4',  '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2',  '#7f7f7f', '#bcbd22', '#17becf']
+        self.model = None
+        self.line = None
+        
+        self.time_scale = 'ps'
+        self.time_factor = 1000.0
+
+        self.initUI()
+
+    def initUI(self):
+        self.layout = qtw.QVBoxLayout(self)
+        self.setLayout(self.layout)
+        #
+        #============================================
+        #  plotting
+        #============================================
+        self.canvas = pg.PlotWidget(axisItems={"left": CustomAxis(orientation="left")})
+        self.canvas.setBackground('w')
+        self.curves = []
+        self.curve_pen = pg.mkPen(color=(0,0,255), width=5, style=QtCore.Qt.SolidLine)
+        self.time_lines = []
+        self.time_line_pen = pg.mkPen(color=(255, 0, 0), width=3, style=QtCore.Qt.DashLine)
+
+        self.axis_labelStyle = {'font-size': '16pt', 'color': 'black'}
+        
+        font = QFont()
+        font.setPointSize(14)
+        self.axis_pen = pg.mkPen(color=(0,0,0), width=5)
+
+        self.canvas.getAxis("bottom").tickFont = font
+        self.canvas.getAxis("bottom").setStyle(tickLength=-10, tickTextOffset = 10)
+        self.canvas.getAxis('bottom').setPen(self.axis_pen)
+        self.canvas.getAxis("bottom").enableAutoSIPrefix(False)
+
+        self.canvas.setLabel('bottom', 'Time', units=self.time_scale, **self.axis_labelStyle)
+
+        self.canvas.getAxis("left").setStyle(tickLength=-10, tickTextOffset = 10)
+        self.canvas.getAxis("left").tickFont = font     
+        self.canvas.getAxis('left').setPen(self.axis_pen)
+        self.canvas.getAxis("left").enableAutoSIPrefix(False)
+
+        self.legend = MyLegendItem(size=None, offset=(-80,30))
+        self.legend.setParentItem(self.canvas.plotItem)
+
+        self.canvas.showAxis('right')
+        self.canvas.getAxis('right').setStyle(showValues=False)
+        self.canvas.getAxis("right").tickFont = font     
+        self.canvas.getAxis('right').setPen(self.axis_pen)
+        self.canvas.showAxis('top')
+        self.canvas.getAxis("top").tickFont = font     
+        self.canvas.getAxis('top').setStyle(showValues=False)
+        self.canvas.getAxis('top').setPen(self.axis_pen)
+        
+        #============================================
+
+        self.layout.addWidget(self.canvas)
+    
+    def set_model(self, model):
+        if self.model == model:
+            pass
+        else:
+            self.model = model
+            self.update_plot()
+    
+
+    def update_plot(self):
+        self.canvas.setLabel('left', self.model.value_label, units=self.model.value_unit, **self.axis_labelStyle)
+        for item in self.curves:
+            self.canvas.removeItem(item)
+        
+        self.times = self.model.get_times()
+        xs = [x/self.time_factor for x in self.times]
+
+        pen = self.curve_pen
+        pen.setColor(QColor(self.color_map[0]))
+        curve = self.canvas.plot(xs, self.model.get_values(), pen=self.curve_pen, antialias=True, )
+        legend = MyItemSample(curve)
+        
+        self.legend.addItem(legend, name=self.model.name )
+        self.curves.append(curve)
+
+    def update_time(self, step):  
+        if self.model is not None:    
+            for item in self.time_lines:
+                self.canvas.removeItem(item)       
+            x_pos = self.times[step]/self.time_factor
+            line = self.canvas.addLine(x=x_pos, pen=self.time_line_pen)
+            self.time_lines.append(line)
+        
 
 class CustomAxis(pg.AxisItem):
     @property
@@ -218,47 +329,49 @@ class CustomAxis(pg.AxisItem):
         
         
 
-
 class FESWindow(qtw.QWidget):
     def __init__(self):
         super().__init__()
+        self.color_map = ['#1f77b4',  '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2',  '#7f7f7f', '#bcbd22', '#17becf']
         self.initUI()
+
 
     def initUI(self):
         self.layout = qtw.QVBoxLayout(self)
         self.setLayout(self.layout)
         self.canvas = pg.PlotWidget(axisItems={"left": CustomAxis(orientation="left")})
         self.canvas.setBackground('w')
-        # self.figure = plt.figure()
-        # self.canvas = FigureCanvas(self.figure)
-        # self.axis = self.figure.add_subplot(1,1,1)
-        # self.figure.subplots_adjust(top=0.950, bottom=0.15, left=0.1, right=0.95)
-        # self.toolbar = NavigationToolbar(self.canvas, self)
-        # self.layout.addWidget(self.toolbar)
         self.curve = None
         self.layout.addWidget(self.canvas)
 
         self.axis_labelStyle = {'font-size': '16pt', 'color': 'black'}
-        # self.axis_tickStyle = {'font-size': '16pt', 'color': 'black', 'tickLength':10}
         self.canvas.setLabel('left', 'Free energy', units='kcal/mol', **self.axis_labelStyle )
         font = QFont()
         font.setPointSize(14)
 
         self.canvas.getAxis("bottom").tickFont = font
         self.canvas.getAxis("left").tickFont = font
-        self.canvas.getAxis("bottom").setStyle(tickLength=10, tickTextOffset = 10)
-        self.canvas.getAxis("left").setStyle(tickLength=10, tickTextOffset = 10)
-        # self.canvas.getAxis("bottom").setStyle()
-        # self.canvas.getAxis("left").setStyle(tickTextOffset = 20)
+        
 
         pen = pg.mkPen(color=(0,0,0), width=5)
+
+        self.canvas.getAxis("bottom").setStyle(tickLength=-10, tickTextOffset = 10)
+        self.canvas.getAxis("left").setStyle(tickLength=-10, tickTextOffset = 10)
         self.canvas.plotItem.getAxis('left').setPen(pen)
         self.canvas.plotItem.getAxis('bottom').setPen(pen)
-        # self.canvas.getAxis("left").setWidth(120)
         self.canvas.getAxis("left").enableAutoSIPrefix(False)
 
+        self.canvas.showAxis("top")
+        self.canvas.showAxis("right")
+        self.canvas.getAxis("top").setStyle(tickLength=0, tickTextOffset = 10)
+        self.canvas.getAxis("right").setStyle(tickLength=0, tickTextOffset = 10)
+        self.canvas.plotItem.getAxis('right').setPen(pen)
+        self.canvas.plotItem.getAxis('top').setPen(pen)
+        self.canvas.getAxis("right").enableAutoSIPrefix(False)
+        self.canvas.getAxis('top').setStyle(showValues=False)
+        self.canvas.getAxis('right').setStyle(showValues=False)
+
         self.lines = []
-        # self.canvas.re
 
 
     def find_minima_barriers(self, coords, values):
@@ -268,29 +381,25 @@ class FESWindow(qtw.QWidget):
         return (maxima, minima)
 
     def plot(self, step, model):
-        coords = model.fes[step].coords
-        values = [x*627.5095 for x in model.fes[step].values]
+        xs, value_raw = model.get_fes_step(step)
+        # fes = model.get_fes()
+        
+        # coords = fes[step][0]
+        # values = [x*627.5095 for x in fes[step].values]
       
-        maxima, minima = self.find_minima_barriers(coords, values)
+        values = [x*627.5095 for x in value_raw]
+        maxima, minima = self.find_minima_barriers(xs, values)
 
         
         # if 1d
-        if (len(coords[0]) == 1):
-            xs = [x[0] for x in coords]
-            
+        if (model.get_fes_dimension() == 1):
             if self.curve is None:
-                pen = pg.mkPen(color=(0, 0, 255), width=5)
+                pen = pg.mkPen(color=QColor(self.color_map[0]), width=5)
                 self.curve = self.canvas.plot(xs, values, pen=pen, antialias=True)
-                self.canvas.setLabel('bottom', model.cvs[0], **self.axis_labelStyle)
+                self.canvas.setLabel('bottom', model.get_cvs()[0][0], **self.axis_labelStyle)
             else:
                 self.curve.setData(xs, values)
             
-            # self.axis.cla()
-            # self.axis.plot(xs, values)
-
-            # self.axis.set_xlabel(model.cvs[0])
-            # self.axis.set_ylabel('Free energy [kcal/mol]')
-
             for item in self.lines:
                 self.canvas.removeItem(item)
 
@@ -301,15 +410,12 @@ class FESWindow(qtw.QWidget):
              
                 x_min = xs[ind_min_1]
                 x_max = xs[ind_min_2]
-                x_width = x_max-x_min
+                # x_width = x_max-x_min
                 y_max = values[ind_max]
 
 
                 line = self.canvas.plot([x_min, x_max], [y_max, y_max], pen = pg.mkPen(color=(255, 128, 0), width=3, style=QtCore.Qt.DashLine))
-                
-                # line = self.canvas.addLine(y=y_max)
                 self.lines.append(line)
-                # print(line.angle)
                 min_1_x_pos = xs[ind_min_1]
                 min_1_y_pos = values[ind_min_1]
                 min_2_x_pos = xs[ind_min_2]
@@ -457,20 +563,50 @@ class TimeCoursePropertyWindow(qtw.QWidget):
         self.selected_plot_objects = {}
         self.selection_changed = False
         self.ylim = [0, 0]
-        self.color_cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
+        # self.color_cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
 
     def initUI(self):
         self.layout = qtw.QVBoxLayout(self)
         self.setLayout(self.layout)
-        self.figure = plt.figure()
-        self.canvas = FigureCanvas(self.figure)
-        self.figure.subplots_adjust(top=0.950, bottom=0.15, left=0.1, right=0.95)
-        self.toolbar = NavigationToolbar(self.canvas, self)
-        self.axis = self.figure.add_subplot(1,1,1)
-        self.axis2 = self.axis.twinx()
+        
+        #
+        #============================================
+        #  plotting
+        #============================================
+        self.canvas = pg.PlotWidget()
+        self.canvas.setBackground('w')
+        self.curves = []
+        self.time_line = None
+        self.layout.addWidget(self.canvas)
+
+        self.axis_labelStyle = {'font-size': '16pt', 'color': 'black'}
+        
+        font = QFont()
+        font.setPointSize(14)
+        pen = pg.mkPen(color=(0,0,0), width=5)
+
+        self.canvas.getAxis("bottom").tickFont = font
+        self.canvas.getAxis("bottom").setStyle(tickLength=10, tickTextOffset = 10)
+        self.canvas.getAxis('bottom').setPen(pen)
+        self.canvas.setLabel('bottom', 'Time', units='ps')
+        self.canvas.getAxis("bottom").enableAutoSIPrefix(False)
+
+        self.canvas.getAxis("left").setStyle(tickLength=10, tickTextOffset = 10)
+        self.canvas.getAxis("left").tickFont = font     
+        self.canvas.getAxis('left').setPen(pen)
+        self.canvas.getAxis("left").enableAutoSIPrefix(False)
+
+        self.canvas.showAxis('right')
+        self.canvas.getAxis("right").setStyle(tickLength=10, tickTextOffset = 10)
+        self.canvas.getAxis("right").tickFont = font     
+        self.canvas.getAxis('right').setPen(pen)
+        self.canvas.getAxis("right").enableAutoSIPrefix(False)
+
+        #============================================
+
+        
         self.hbox = qtw.QHBoxLayout()
         self.layout.addLayout(self.hbox)
-        self.layout.addWidget(self.toolbar)
         self.layout.addWidget(self.canvas)
 
         self.hbox.setAlignment(Qt.AlignLeft)
@@ -484,36 +620,31 @@ class TimeCoursePropertyWindow(qtw.QWidget):
         self.cur_step = step
         if (self.line):
             self.axis.lines.pop()
-            # self.axis.lines.remove(self.line)
             self.line = None
 
         if self.selection_changed == False:
             pass
         else:
-            # self.model = model
-
-            self.axis.cla()
-
             axis1_type = 'None'
             if self.plot_axis1 == 'Bond Distance':
-                self.axis.set_ylabel(r'Bond Distance [$\AA$]')
+                self.canvas.setLabel('left', 'Bond Distance', units='$\AA$', **self.axis_labelStyle )
                 axis1_type = 'R'
             elif self.plot_axis1 == 'Bond Angle':
-                self.axis.set_ylabel(r'Bond Angle [degree]')
+                self.canvas.setLabel('left', 'Bond Angle', units='degree', **self.axis_labelStyle )
                 axis1_type = 'A'
             elif self.plot_axis1 == 'Charge':
-                self.axis.set_ylabel(r'Charge')
+                self.canvas.setLabel('left', 'Charge', **self.axis_labelStyle )
                 axis1_type = 'C'
             
             axis2_type = 'None'
             if self.plot_axis2 == 'Bond Distance':
-                self.axis2.set_ylabel(r'Bond Distance [$\AA$]')
+                self.canvas.setLabel('right', 'Bond Distance', units='$\AA$', **self.axis_labelStyle )
                 axis2_type = 'R'
             elif self.plot_axis2 == 'Bond Angle':
-                self.axis2.set_ylabel(r'Bond Angle [degree]')
+                self.canvas.setLabel('right', 'Bond Angle', units='degree', **self.axis_labelStyle )
                 axis2_type = 'A'
             elif self.plot_axis2 == 'Charge':
-                self.axis2.set_ylabel(r'Charge')
+                self.canvas.setLabel('right', 'Charge', **self.axis_labelStyle )
                 axis2_type = 'C'
             
             ind = 0
@@ -529,34 +660,34 @@ class TimeCoursePropertyWindow(qtw.QWidget):
                 
                 xs = [self.model.gaussian_interval_time*x/1000.0 for x in range(len(values))]
                 if name_type == axis1_type:
-                    obj = self.axis.plot(xs, values, label='{}({})'.format(name_type, '-'.join(name_info[1:])), color=self.color_cycle[ind])
+                    obj = self.canvas.plot(xs, values, name='{}({})'.format(name_type, '-'.join(name_info[1:])), color=self.color_cycle[ind])
                     self.selected_plot_objects[name] = obj
                     ind += 1
-                elif name_type == axis2_type:
-                    obj = self.axis2.plot(xs, values, label='{}({})'.format(name_type, '-'.join(name_info[1:])), color=self.color_cycle[ind])
-                    self.axis.plot(np.nan, label='{}({})'.format(name_type, '-'.join(name_info[1:])), color=self.color_cycle[ind])
-                    self.selected_plot_objects[name] = obj
-                    ind += 1
+                # elif name_type == axis2_type:
+                #     obj = self.axis2.plot(xs, values, label='{}({})'.format(name_type, '-'.join(name_info[1:])), color=self.color_cycle[ind])
+                #     self.axis.plot(np.nan, label='{}({})'.format(name_type, '-'.join(name_info[1:])), color=self.color_cycle[ind])
+                #     self.selected_plot_objects[name] = obj
+                #     ind += 1
             
-            self.ylim = self.axis.get_ylim()
+            # self.ylim = self.axis.get_ylim()
 
-            self.axis.set_xlabel('Time [ps]')
+            # self.axis.set_xlabel('Time [ps]')
             # self.axis.set_ylabel('Gaussian Height of CV1 [kcal/mol]')
             
             
             # labs = [l.get_label() for l in self.selected_plot_objects.values()]
             # self.axis.legend(self.selected_plot_objects, labs)
-            self.axis.legend()
+            # self.axis.legend()
             # self.axis2.legend()
             self.selection_changed = False
-        self.axis.set_xlim(left=0.0)
+        # self.axis.set_xlim(left=0.0)
         
         
     
         x_pos = self.model.gaussian_interval_time*(step+1)/1000.0
         
-        self.line = self.axis.plot([x_pos, x_pos], [self.ylim[0], self.ylim[1]], '--', color='red')
-        self.canvas.draw()
+        # self.line = self.axis.plot([x_pos, x_pos], [self.ylim[0], self.ylim[1]], '--', color='red')
+        # self.canvas.draw()
 
 
     def show_selection(self):
@@ -639,80 +770,100 @@ class TimeCoursePropertyWindow(qtw.QWidget):
                     for i in range(norb):
                         line = next(f)
 
-        
-    def load_trajectory(self):
-        filename = self.model.folderName.joinpath('dftb.traj')
-        if not os.path.exists(filename):
-            filename = self.model.folderName.joinpath('traject')
-        with open(filename, 'r') as f:
-            for line in f:
-                coords = []
-                nat = int(line)
-                title = next(f)
-                arr = title.split()
-                cur_step = int(arr[9])
-                if cur_step % self.model.gaussian_interval_step == 0 :
-                    for i in range(nat):
-                        line = next(f)
-                        arr = line.split()
-                        coords.append([arr[0], list(map(float, arr[1:4]))])
-                    self.traj.append(coords)
-                else:
-                    for i in range(nat):
-                        line = next(f)
-
-
 class GaussianPotentialModel:
-    def __init__(self, height, width, cv_num, cv_coord):
+    def __init__(self, height, widths, cv_coords):
         super().__init__()            
         self.height = height
-        self.width = width
-        self.cv_num = cv_num
-        self.cv_coord = cv_coord
+        self.widths = widths
+        self.cv_coords = cv_coords
+        if len(self.widths) != len(self.cv_coords):
+            raise RuntimeError('Dimension is not consistent')
+    
+    def dimension(self):
+        return len(self.widths)
 
-class FESPotential:
-    def __init__(self):
-        super().__init__()
-        self.coords = []
-        self.values = []
+    def value(self, xs):
+        if len(xs) != self.dimension():
+            raise RuntimeError('Dimension is not consistent')
+        exp_value = 0.0
+        for x, sigma, center in zip(xs, self.widths, self.cv_coords):
+            exp_value += (np.power(x - center, 2.) / (2 * np.power(sigma, 2.)))
         
+        return -self.height*np.exp(-exp_value)
+        # return -self.height*np.exp(-np.power(x - self.cv_coord, 2.) / (2 * np.power(self.width, 2.)))
 
+# class FESPotential:
+#     def __init__(self):
+#         super().__init__()
+#         self.coords = []
+#         self.values = []
 
 class MetaDynamicsResultModel:
     
     def __init__(self):
         super().__init__()
-        self.gau_pots = []
-        self.fes = []
-        self.cvs = []
+        self.gau_pots = None
+        self.fes = None
+        self.cvs = None
+        self.trajectory = None
+        self.net_atomic_charge = None
+        
+        self.default_names = {
+            'main_output': ['dftb.out'],
+            'trajectory': ['traject', 'dftb.traj'],
+            'mulliken': ['mulliken', 'dftb.mull'],
+            'bias_potential': ['biaspot'],
+            'metacv': ['metacv.dat'],
+            'fes': ['fes.dat']
+        }
     
-    def parseFolder(self, folderName):
+    def get_fes_dimension(self):
+        return self.get_gau_pots()[0].dimension()
+
+    def set_base_folder(self, folderName):
         self.folderName = folderName
-        self.loadData_metacvs(folderName.joinpath('metacv.dat'))
-        self.loadData_fes(folderName.joinpath('fes.dat'))
-        self.loadData_biaspot(folderName.joinpath('biaspot'))
+        self.gau_pots = None
+        self.fes = None
+        self.cvs = None
+        self.trajectory = None
+        self.net_atomic_charge = None
+        
 
     def loadData_metacvs(self, fileName):
         with open(fileName, 'r') as f:
+            self.cvs = []
             line = next(f)
             if ('RATIONALCOORDINATIONNUMBER' in line):
-                self.cvs.append('Coordination Numbers')
+                self.cvs.append(('Coordination Numbers', 'coordination_number'))
             elif ('BONDDISTANCE') in line:
-                self.cvs.append('Bond Distance')
+                self.cvs.append(('Bond Distance', 'bond_distance'))
+
+    def get_cvs(self):
+        if self.cvs is None:
+            for name in self.default_names['metacv']:
+                filename = self.folderName.joinpath(name)
+                if os.path.exists:
+                    self.loadData_metacvs(filename)
+                    break
+        if self.cvs is None:
+            raise RuntimeError('Cannot load file: {}'.format(', '.join(self.default_names['metacv'])))
+        return self.cvs
 
 
-
-    """ GAUSSIAN BIAS POTENTIAL:        1
-    *** AT T=         80.00 FSEC, THIS RUN'S STEP NO.=      80
-     Gaussian height     =        0.0010000000 a.u.
-     Collective variable =                   1
-       Coordinate        =        0.0208250915
-       Gaussian width    =        0.1000000000
-    """
     def loadData_biaspot(self, fileName):
+        """
+        GAUSSIAN BIAS POTENTIAL:        1
+        *** AT T=         80.00 FSEC, THIS RUN'S STEP NO.=      80
+        Gaussian height     =        0.0010000000 a.u.
+        Collective variable =                   1
+            Coordinate        =        0.0208250915
+            Gaussian width    =        0.1000000000
+        """
+        min_coord = {}
+        max_coord = {}
         with open(fileName, 'r') as f:
             line = next(f)
-            
+            gau_pots = []
             while('GAUSSIAN BIAS POTENTIAL:' in line):
                 local_gau_pots = []
                 arr = line.split()
@@ -727,8 +878,10 @@ class MetaDynamicsResultModel:
                 
                 line = next(f)
                 arr = line.split()
-                pot_height = float(arr[3])
+                pot_height = float(arr[3])      
 
+                pot_widths = []
+                pot_coords = []
                 while(True):
                     line = next(f)
                     arr = line.split()
@@ -736,58 +889,159 @@ class MetaDynamicsResultModel:
                     line = next(f)
                     arr = line.split()
                     pot_cv_coord = float(arr[2])
+
+                    if pot_cv_coord > max_coord.get(pot_cv_num-1, -1E20):
+                        max_coord[pot_cv_num-1] = pot_cv_coord
+                    if pot_cv_coord < min_coord.get(pot_cv_num-1, 1E20):
+                        min_coord[pot_cv_num-1] = pot_cv_coord
+
+                    pot_coords.append(pot_cv_coord)
+
                     line = next(f)
                     arr = line.split()
                     pot_width = float(arr[3])
 
-                    gau_pot = GaussianPotentialModel(pot_height, pot_width, pot_cv_num, pot_cv_coord)
-                    local_gau_pots.append(gau_pot)
+                    pot_widths.append(pot_width)
                     
                     try:
                         line = next(f)
 
                         if ('GAUSSIAN BIAS POTENTIAL' in line or len(line.strip())==0):
-                            self.gau_pots.append(local_gau_pots)
-                            break
+                            raise StopIteration
                     except StopIteration:
-                        self.gau_pots.append(local_gau_pots)
+                        pot = GaussianPotentialModel(pot_height, pot_widths, pot_coords)
+                        gau_pots.append(pot)
                         break
+        if len(gau_pots) > 0:
+            self.gau_pots = gau_pots
+            ncv = len(min_coord)
+            self.gaussian_coord_range = [(min_coord[i], max_coord[i]) for i in range(ncv)]
 
-    def loadData_fes(self, filename):
+    def get_gau_pots(self):
+        names = self.default_names['bias_potential']
+        if self.gau_pots is None:
+            for name in names:
+                filename = self.folderName.joinpath(name)
+                print(filename)
+                if os.path.exists:
+                    self.loadData_biaspot(filename)
+                    break
+        if self.gau_pots is None:
+            raise RuntimeError('Cannot load file: {}'.format(', '.join(names)))
+        return self.gau_pots
+
+
+    def load_trajectory(self, filename):
         with open(filename, 'r') as f:
-            self.fes = []
-
-            coords = []
-            values = []
+            traj = []
+            symbols = []
+            first_str = True
             for line in f:
-                if line.strip()[0] == '#':
-                    if (len(coords) > 0):
-                        fes_step = FESPotential()
-
-                        fes_step.coords = coords
-                        fes_step.values = values
-                        self.fes.append(fes_step)
-                        coords = []
-                        values = []
+                nat = int(line)
+                title = next(f)
+                arr = title.split()
+                cur_step = int(arr[9])
+                if cur_step % self.gaussian_interval_step == 0 :
+                    coords = np.zeros( (nat, 3) )
+                    for i in range(nat):
+                        line = next(f)
+                        arr = line.split()
+                        if first_str:
+                            symbols.append(arr[0])
+                        coords[i] = list(map(float, arr[1:4]))
+                    traj.append(coords)
                 else:
-                    # print(line)
-                    arr = line.split()
-                    coords.append(list(map(float, arr[0:-1])))
-                    values.append(float(arr[-1]))
-            if (len(coords) > 0):
-                fes_step = FESPotential()
+                    for i in range(nat):
+                        line = next(f)
+                if first_str:
+                    first_str = False
+        if len(traj) > 0:
+            self.trajectory = traj
+            self.symbols = symbols
 
-                fes_step.coords = coords
-                fes_step.values = values
-                self.fes.append(fes_step)
-                coords = []
-                values = []
+    # def loadData_fes(self, filename):
+    #     with open(filename, 'r') as f:
+    #         fes = []
 
-        # if len(self.coords) > 0:
-        #     self.plot_fes(0)
-        #     self.slider.setMaximum(len(self.coords)-1)
+    #         coords = []
+    #         values = []
+    #         for line in f:
+    #             if line.strip()[0] == '#':
+    #                 if (len(coords) > 0):
+    #                     fes_step = FESPotential()
 
+    #                     fes_step.coords = coords
+    #                     fes_step.values = values
+    #                     fes.append(fes_step)
+    #                     coords = []
+    #                     values = []
+    #             else:
+    #                 # print(line)
+    #                 arr = line.split()
+    #                 coords.append(list(map(float, arr[0:-1])))
+    #                 values.append(float(arr[-1]))
+    #         if (len(coords) > 0):
+    #             fes_step = FESPotential()
 
+    #             fes_step.coords = coords
+    #             fes_step.values = values
+    #             fes.append(fes_step)
+    #             coords = []
+    #             values = []
+    #     self.fes = fes
+
+    # def get_fes(self):
+    #     names = self.default_names['fes']
+    #     if self.fes is None:
+    #         for name in names:
+    #             filename = self.folderName.joinpath(name)
+    #             if os.path.exists:
+    #                 self.loadData_fes(filename)
+    #                 break
+    #     if self.fes is None:
+    #         raise RuntimeError('Cannot load file: {}'.format(', '.join(names)))
+    #     return self.fes
+
+    def get_fes_step(self, step):
+
+        if self.fes is None:
+            
+            gau_pots = self.get_gau_pots()
+            
+            self.fes = []
+            cv_index = 0
+            
+            min_x, max_x = self.gaussian_coord_range[cv_index]
+            width = max_x - min_x
+            min_x -= 0.5*width
+            max_x += 0.5*width
+            
+            npoints = 150
+            xs = np.linspace(min_x, max_x, npoints)
+            # print(xs[1]-xs[0])
+            ys = np.zeros(npoints)
+
+            for pot in gau_pots:
+                for i in range(npoints):
+                    ys[i] += pot.value([xs[i]])
+                             
+                self.fes.append((xs, np.copy(ys)))
+
+        return self.fes[step]
+
+        
+            
+    def get_trajectory(self):
+        names = self.default_names['trajectory']
+        if self.trajectory is None:
+            for name in names:
+                filename = self.folderName.joinpath(name)
+                if os.path.exists:
+                    self.load_trajectory(filename)
+                    break
+        if self.trajectory is None:
+            raise RuntimeError('Cannot load file: {}'.format(', '.join(names)))
+        return self.trajectory
 
 
 class MTDTool(qtw.QMainWindow):
@@ -850,10 +1104,10 @@ class MTDTool(qtw.QMainWindow):
         self.fes_tab = FESWindow()
         self.tab.addTab(self.fes_tab, 'FES')
 
-        self.cv_coord_tab = CVCoordWindow()
+        self.cv_coord_tab = OneDTimeWindow()
         self.tab.addTab(self.cv_coord_tab, 'CV')
 
-        self.cv_height_tab = CVHeightWindow()
+        self.cv_height_tab = OneDTimeWindow()
         self.tab.addTab(self.cv_height_tab, 'CV Height')
 
         self.time_property = TimeCoursePropertyWindow(self.model)
@@ -872,13 +1126,39 @@ class MTDTool(qtw.QMainWindow):
         # finalizing
         self.setMinimumSize(800, 600)
         self.setWindowTitle('DCDFTBK MetaDynamics Tool')    
+
+
+        saveAct = qtw.QAction(QIcon.fromTheme('document-save'), 'Save', self)
+        saveAct.setShortcut('Ctrl+S')
+        saveAct.triggered.connect(self.save_doc)
+        
+        self.toolbar = self.addToolBar('Save')
+        self.toolbar.addAction(saveAct)
+
         self.show()
+
+    def save_doc(self):
+        print('tab: ', self.tab.currentIndex())
+        
+        fileDialog = qtw.QFileDialog()
+        fileDialog.setDirectory(os.path.curdir)
+        fileDialog.setFileMode(qtw.QFileDialog.AnyFile)
+        fileDialog.setAcceptMode(qtw.QFileDialog.AcceptSave) 
+        filename, _ = fileDialog.getSaveFileName()
+        if filename != "":
+            with open(filename, 'w') as fout:
+                if self.tab.currentIndex() == 0:
+                    xs, ys = self.fes_tab.curve.getData()
+                    print('### FREE ENERGY SURFACE CONSISTING OF  {} GAUSSIANS'.format(int(self.cur_step_label.text())+1), file=fout)
+                    for x, y in zip(xs, ys):
+                        print('{:20.12f} {:20.12f} {:20.12f}'.format(x, y/627.5095, y),file=fout)
+
 
     def load_data(self, folder):
         self.folder = pathlib.Path(folder)
-        self.model.parseFolder(self.folder)
+        self.model.set_base_folder(self.folder)
 
-        if (len(self.model.gau_pots) == len(self.model.fes) and len(self.model.gau_pots) > 0):
+        if (len(self.model.get_gau_pots()) > 0):
             self.time_slider.setEnabled(True)
             self.time_slider.valueChanged.connect(self.update_plots)
 
@@ -889,6 +1169,12 @@ class MTDTool(qtw.QMainWindow):
 
             self.time_slider.setMaximum(last_step)
             self.time_slider.setValue(last_step)
+
+            cv_coord_model = CVCoordAdpater(self.model, 0)
+            self.cv_coord_tab.set_model(cv_coord_model)
+
+            cv_height_model = CVHeightAdpater(self.model, 0)
+            self.cv_height_tab.set_model(cv_height_model)
             self.update_plots(last_step)
     def clean_data(self):
         self.model = MetaDynamicsResultModel()
@@ -900,15 +1186,13 @@ class MTDTool(qtw.QMainWindow):
         
         if folder != "":
             self.load_data(folder)
-                
-                
             
     def update_plots(self, step):
         self.cur_step_label.setText(str(step))
         self.cur_time_label.setText('{:8.2f} ps'.format((step+1)*self.model.gaussian_interval_time/1000.0))
         self.fes_tab.plot(step, self.model)
-        self.cv_coord_tab.plot(step, self.model)
-        self.cv_height_tab.plot(step, self.model)
+        self.cv_coord_tab.update_time(step)
+        self.cv_height_tab.update_time(step)
         self.time_property.plot(step, self.model)
         
         
@@ -917,10 +1201,11 @@ if __name__ == '__main__':
     
     app = qtw.QApplication(sys.argv)
     tool = MTDTool()
-    try:
-        tool.load_data(os.curdir)
-    except Exception as e:
-        print(e)
-        tool.clean_data()
+    tool.resize(1024, 768)
+    # try:
+    tool.load_data(os.curdir)
+    # except Exception as e:
+        # print(e)
+        # tool.clean_data()
     sys.exit(app.exec_())
 
