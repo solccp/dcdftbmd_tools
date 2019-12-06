@@ -4,6 +4,7 @@ import sys
 import os
 import math
 import pathlib
+from copy import deepcopy
 
 import numpy as np
 from scipy.signal import find_peaks
@@ -17,6 +18,25 @@ import pyqtgraph as pg
 from pyqtgraph.graphicsItems.LegendItem import ItemSample
 from pyqtgraph.graphicsItems.LegendItem import LegendItem
 from pyqtgraph.graphicsItems.LabelItem import LabelItem
+
+
+import matplotlib
+matplotlib.use('QT5Agg')
+matplotlib.rcParams["figure.dpi"] = 200.0
+matplotlib.rcParams["figure.figsize"] = [10, 6]
+
+import matplotlib.pyplot as plt
+import matplotlib.cm as cmap
+from matplotlib.backends.backend_qt5agg import (
+        FigureCanvas, NavigationToolbar2QT as NavigationToolbar)
+
+from matplotlib.figure import Figure
+from matplotlib.gridspec import GridSpec
+from matplotlib.ticker import MaxNLocator
+from matplotlib.colors import BoundaryNorm
+import skimage.feature
+
+
 
 class External(QThread):
     finished = pyqtSignal()
@@ -381,18 +401,12 @@ class FESWindow(qtw.QWidget):
         return (maxima, minima)
 
     def plot(self, step, model):
-        xs, value_raw = model.get_fes_step(step)
-        # fes = model.get_fes()
-        
-        # coords = fes[step][0]
-        # values = [x*627.5095 for x in fes[step].values]
-      
+        xs, value_raw = model.get_fes_step(step)      
         values = [x*627.5095 for x in value_raw]
-        maxima, minima = self.find_minima_barriers(xs, values)
 
-        
         # if 1d
         if (model.get_fes_dimension() == 1):
+            maxima, minima = self.find_minima_barriers(xs, values)
             if self.curve is None:
                 pen = pg.mkPen(color=QColor(self.color_map[0]), width=5)
                 self.curve = self.canvas.plot(xs, values, pen=pen, antialias=True)
@@ -440,7 +454,131 @@ class FESWindow(qtw.QWidget):
                 self.canvas.addItem(label2)
                                
         else:
-            raise RuntimeError('More than 1D FES plotting is not implemented')
+            pass
+
+
+class TwoDFESWindow(qtw.QWidget):
+    def __init__(self):
+        super().__init__()
+        self.color_map = ['#1f77b4',  '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2',  '#7f7f7f', '#bcbd22', '#17becf']
+        self.initUI()
+
+
+    def initUI(self):
+        self.layout = qtw.QVBoxLayout(self)
+        self.setLayout(self.layout)
+        
+        self.figure = plt.figure()
+        self.canvas = FigureCanvas(self.figure)
+        self.toolbar = NavigationToolbar(self.canvas, self)
+        self.layout.addWidget(self.toolbar)
+        self.layout.addWidget(self.canvas)
+        
+        gs00 = GridSpec(1, 2, width_ratios=[10,1])
+        self.axis = self.figure.add_subplot(gs00[0])
+        self.cax = self.figure.add_subplot(gs00[1])
+
+        
+
+
+        self.lines = []
+
+
+    def dijkstra(self, V, start):
+        mask = V.mask
+        visit_mask = mask.copy() # mask visited cells
+        m = np.ones_like(V) * np.inf
+        connectivity = [(i,j) for i in [-1, 0, 1] for j in [-1, 0, 1] if (not (i == j == 0))]
+        cc = start # current_cell
+        m[cc] = 0
+        P = {}  # dictionary of predecessors 
+        #while (~visit_mask).sum() > 0:
+        for _ in range(V.size):
+            #print cc
+            neighbors = [tuple(e) for e in np.asarray(cc) - connectivity 
+                        if e[0] > 0 and e[1] > 0 and e[0] < V.shape[0] and e[1] < V.shape[1]]
+            neighbors = [ e for e in neighbors if not visit_mask[e] ]
+            tentative_distance = np.asarray([V[e]-V[cc] for e in neighbors])
+            for i,e in enumerate(neighbors):
+                d = tentative_distance[i] + m[cc]
+                if d < m[e]:
+                    m[e] = d
+                    P[e] = cc
+            visit_mask[cc] = True
+            m_mask = np.ma.masked_array(m, visit_mask)
+            cc = np.unravel_index(m_mask.argmin(), m.shape)
+        return m, P
+
+    def shortestPath(self, start, end, P):
+        Path = []
+        step = end
+        while True:
+            Path.append(step)
+            if step == start: break
+            step = P[step]
+        Path.reverse()
+        return np.asarray(Path)
+
+
+    def plot(self, step, model):
+        data, value_raw = model.get_fes_step(step)      
+        x, y, dx, dy = data
+        
+        z = value_raw*627.5095
+
+        # if 2d
+        if (model.get_fes_dimension() == 2):
+            self.axis.cla()
+
+            self.axis.set_xlabel('CV1 ({})'.format(model.get_cvs()[0][0]))
+            self.axis.set_ylabel('CV2 ({})'.format(model.get_cvs()[1][0]))
+            
+           
+            levels = MaxNLocator(nbins=255).tick_values(z.min(), z.max())
+            cmap = plt.get_cmap('gnuplot2')
+            
+            cf = self.axis.contourf(x,
+                            y, z, levels=levels,
+                            cmap=cmap)
+            self.figure.colorbar(cf, cax=self.cax)
+     
+            
+            minima_pos = skimage.feature.peak_local_max(-z)
+            
+            if len(minima_pos) == 2:
+                minima = []
+                for c in minima_pos:
+                    minima.append( (x[c[0],c[1]], y[c[0],c[1]], z[c[0],c[1]] ))
+            
+                minima.sort(key=lambda x: x[2])
+                for minimum in minima:
+                    self.axis.annotate('{:.2f}'.format(minimum[2]), (minimum[0], minimum[1]), color='white')
+                
+                start = (minima_pos[0][0], minima_pos[0][1])
+                end =  (minima_pos[1][0], minima_pos[1][1])
+                
+                V = np.ma.masked_array(z, z>0)
+                D, P = self.dijkstra(V, start)
+                path = self.shortestPath(start, end, P)
+
+                path_x = []
+                path_y = []
+                maximum = (0, 0, -1E20)
+                for po in path:
+                    path_x.append(x[po[0], po[1]])
+                    path_y.append(y[po[0], po[1]])
+                    if z[po[0], po[1]] > maximum[2]:
+                        maximum = (x[po[0], po[1]], y[po[0], po[1]], z[po[0], po[1]])
+                
+                self.axis.annotate('{:.2f}'.format(maximum[2]), (maximum[0], maximum[1]), color='black')
+                self.axis.plot(path_x, path_y, 'r.-')
+            
+                
+            self.canvas.draw()
+        else:
+            pass
+
+
 class PropertySelectionWidget(qtw.QDialog):
     def __init__(self, model, parent=None, flags=Qt.WindowFlags()):
         super().__init__(parent=parent, flags=flags)
@@ -786,17 +924,11 @@ class GaussianPotentialModel:
         if len(xs) != self.dimension():
             raise RuntimeError('Dimension is not consistent')
         exp_value = 0.0
+        
         for x, sigma, center in zip(xs, self.widths, self.cv_coords):
             exp_value += (np.power(x - center, 2.) / (2 * np.power(sigma, 2.)))
-        
-        return -self.height*np.exp(-exp_value)
-        # return -self.height*np.exp(-np.power(x - self.cv_coord, 2.) / (2 * np.power(self.width, 2.)))
-
-# class FESPotential:
-#     def __init__(self):
-#         super().__init__()
-#         self.coords = []
-#         self.values = []
+        value = -self.height*np.exp(-exp_value)
+        return value
 
 class MetaDynamicsResultModel:
     
@@ -832,11 +964,11 @@ class MetaDynamicsResultModel:
     def loadData_metacvs(self, fileName):
         with open(fileName, 'r') as f:
             self.cvs = []
-            line = next(f)
-            if ('RATIONALCOORDINATIONNUMBER' in line):
-                self.cvs.append(('Coordination Numbers', 'coordination_number'))
-            elif ('BONDDISTANCE') in line:
-                self.cvs.append(('Bond Distance', 'bond_distance'))
+            for line in f:
+                if ('RATIONALCOORDINATIONNUMBER' in line):
+                    self.cvs.append(('Coordination Numbers', 'coordination_number'))
+                elif ('BONDDISTANCE') in line:
+                    self.cvs.append(('Bond Distance', 'bond_distance'))
 
     def get_cvs(self):
         if self.cvs is None:
@@ -865,7 +997,7 @@ class MetaDynamicsResultModel:
             line = next(f)
             gau_pots = []
             while('GAUSSIAN BIAS POTENTIAL:' in line):
-                local_gau_pots = []
+                
                 arr = line.split()
                 pot_step = int(arr[3])
                 title_line = next(f)
@@ -882,8 +1014,8 @@ class MetaDynamicsResultModel:
 
                 pot_widths = []
                 pot_coords = []
+                line = next(f)
                 while(True):
-                    line = next(f)
                     arr = line.split()
                     pot_cv_num = int(arr[3])
                     line = next(f)
@@ -922,7 +1054,6 @@ class MetaDynamicsResultModel:
         if self.gau_pots is None:
             for name in names:
                 filename = self.folderName.joinpath(name)
-                print(filename)
                 if os.path.exists:
                     self.loadData_biaspot(filename)
                     break
@@ -959,73 +1090,66 @@ class MetaDynamicsResultModel:
             self.trajectory = traj
             self.symbols = symbols
 
-    # def loadData_fes(self, filename):
-    #     with open(filename, 'r') as f:
-    #         fes = []
-
-    #         coords = []
-    #         values = []
-    #         for line in f:
-    #             if line.strip()[0] == '#':
-    #                 if (len(coords) > 0):
-    #                     fes_step = FESPotential()
-
-    #                     fes_step.coords = coords
-    #                     fes_step.values = values
-    #                     fes.append(fes_step)
-    #                     coords = []
-    #                     values = []
-    #             else:
-    #                 # print(line)
-    #                 arr = line.split()
-    #                 coords.append(list(map(float, arr[0:-1])))
-    #                 values.append(float(arr[-1]))
-    #         if (len(coords) > 0):
-    #             fes_step = FESPotential()
-
-    #             fes_step.coords = coords
-    #             fes_step.values = values
-    #             fes.append(fes_step)
-    #             coords = []
-    #             values = []
-    #     self.fes = fes
-
-    # def get_fes(self):
-    #     names = self.default_names['fes']
-    #     if self.fes is None:
-    #         for name in names:
-    #             filename = self.folderName.joinpath(name)
-    #             if os.path.exists:
-    #                 self.loadData_fes(filename)
-    #                 break
-    #     if self.fes is None:
-    #         raise RuntimeError('Cannot load file: {}'.format(', '.join(names)))
-    #     return self.fes
-
+    
     def get_fes_step(self, step):
 
         if self.fes is None:
-            
-            gau_pots = self.get_gau_pots()
-            
-            self.fes = []
-            cv_index = 0
-            
-            min_x, max_x = self.gaussian_coord_range[cv_index]
-            width = max_x - min_x
-            min_x -= 0.5*width
-            max_x += 0.5*width
-            
-            npoints = 150
-            xs = np.linspace(min_x, max_x, npoints)
-            # print(xs[1]-xs[0])
-            ys = np.zeros(npoints)
+            n_dimension = self.get_fes_dimension()
+            if  n_dimension == 2:
+                self.fes = []
 
-            for pot in gau_pots:
-                for i in range(npoints):
-                    ys[i] += pot.value([xs[i]])
-                             
-                self.fes.append((xs, np.copy(ys)))
+                gau_pots = self.get_gau_pots()[:step+1]
+                
+                
+                axis_bounds = []
+                
+
+                for cv_index in range(n_dimension):
+
+                    min_x, max_x = self.gaussian_coord_range[cv_index]
+                    width = max_x - min_x
+                    min_x -= 0.5*width
+                    max_x += 0.5*width
+
+                    
+                    axis_bounds.append( (min_x, max_x ))
+                
+                # print(axis_bounds)
+                dx, dy = 0.05, 0.05
+
+                # generate 2 2d grids for the x & y bounds
+                y, x = np.mgrid[slice(axis_bounds[1][0], axis_bounds[1][1] + dy, dy),
+                                slice(axis_bounds[0][0], axis_bounds[0][1] + dx, dx)]
+
+                zz = np.zeros( x.shape )
+                
+                for pot in gau_pots:
+                    for i in range(zz.shape[0]):
+                        for j in range(zz.shape[1]):
+                            zz[i,j] += pot.value([x[i,j],y[i,j]])
+                                
+                    self.fes.append( ((x, y, dx, dy),  deepcopy(zz)))
+                
+            elif n_dimension == 1:
+                self.fes = []
+                gau_pots = self.get_gau_pots()[:step+1]
+                npoints = 150
+                cv_index = 0
+                min_x, max_x = self.gaussian_coord_range[cv_index]
+                width = max_x - min_x
+                min_x -= 0.5*width
+                max_x += 0.5*width
+                xs = np.linspace(min_x, max_x, npoints)
+                ys = np.zeros(npoints)
+
+                for pot in gau_pots:
+                    for i in range(npoints):
+                        ys[i] += pot.value([xs[i]])
+                                
+                    self.fes.append((xs, np.copy(ys)))
+            else:
+                raise ValueError('Not implemented')
+
 
         return self.fes[step]
 
@@ -1103,6 +1227,9 @@ class MTDTool(qtw.QMainWindow):
         
         self.fes_tab = FESWindow()
         self.tab.addTab(self.fes_tab, 'FES')
+        
+        self.fes_tab_2d = TwoDFESWindow()
+        self.tab.addTab(self.fes_tab_2d, '2D FES')
 
         self.cv_coord_tab = OneDTimeWindow()
         self.tab.addTab(self.cv_coord_tab, 'CV')
@@ -1175,7 +1302,7 @@ class MTDTool(qtw.QMainWindow):
 
             cv_height_model = CVHeightAdpater(self.model, 0)
             self.cv_height_tab.set_model(cv_height_model)
-            self.update_plots(last_step)
+            
     def clean_data(self):
         self.model = MetaDynamicsResultModel()
         self.time_slider.setEnabled(False)
@@ -1191,6 +1318,7 @@ class MTDTool(qtw.QMainWindow):
         self.cur_step_label.setText(str(step))
         self.cur_time_label.setText('{:8.2f} ps'.format((step+1)*self.model.gaussian_interval_time/1000.0))
         self.fes_tab.plot(step, self.model)
+        self.fes_tab_2d.plot(step, self.model)
         self.cv_coord_tab.update_time(step)
         self.cv_height_tab.update_time(step)
         self.time_property.plot(step, self.model)
