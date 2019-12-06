@@ -10,7 +10,7 @@ import numpy as np
 from scipy.signal import find_peaks
 
 import PyQt5.QtWidgets as qtw
-from PyQt5.QtGui import QIcon,  QRegExpValidator, QFont, QColor
+from PyQt5.QtGui import QIcon,  QRegExpValidator, QFont, QColor, QPen
 from PyQt5.QtCore import Qt, QStringListModel, QRegExp, QThread, pyqtSignal
 from PyQt5 import QtCore
 
@@ -150,47 +150,63 @@ class TimeCourseDataModel():
         self.values = values
         self.value_label = value_label
         self.value_unit = value_unit
+    def get_num_lines(self):
+        return 1
 
 class CVHeightAdpater:
     H2kcalmol = 627.5095
-    def __init__(self, model, cv_index):
+    def __init__(self, model):
         self.model = model
-        self.cv_index = cv_index
-        self.name = 'CV{}'.format(cv_index+1)
         self.times = None 
         self.values = None
         self.value_unit = 'kcal/mol'
-        self.value_label = 'Gaussian Height of {}'.format(self.name)
+        self.name = 'CV'
+        self.value_label = 'Gaussian Height'
 
     def get_times(self):
         if self.times is None:
             self.times = [self.model.gaussian_interval_time*(i+1) for i in range(len(self.model.get_gau_pots()))]
         return self.times
         
-    def get_values(self):
+    def get_values(self, index):
         if self.values is None:
             self.values = [x.height*self.H2kcalmol for x in self.model.get_gau_pots()]
         return self.values
+    
+    def get_num_lines(self):
+        return 1
+
+    def get_value_label(self, index):
+        return self.value_label
+
+    def get_name(self, index):
+        return self.name 
 
 class CVCoordAdpater:
-    def __init__(self, model, cv_index):
+    def __init__(self, model):
         self.model = model
-        self.cv_index = cv_index
-        self.name = 'CV{}'.format(cv_index+1)
         self.times = None 
-        self.values = None
+        self.values = {}
         self.value_unit = self.model.get_cvs()[0][0]
-        self.value_label = self.name
 
     def get_times(self):
         if self.times is None:
             self.times = [self.model.gaussian_interval_time*(i+1) for i in range(len(self.model.get_gau_pots()))]
         return self.times
         
-    def get_values(self):
-        if self.values is None:
-            self.values = [x.cv_coords[self.cv_index] for x in self.model.get_gau_pots()]
-        return self.values
+    def get_value_label(self, index):
+        return 'CV{}'.format(index+1)
+
+    def get_name(self, index):
+        return 'CV{}'.format(index+1)
+
+    def get_values(self, index):
+        if index not in self.values:
+            self.values[index] = [x.cv_coords[index] for x in self.model.get_gau_pots()]
+        return self.values[index]
+    
+    def get_num_lines(self):
+        return self.model.get_fes_dimension()
 
 class OneDTimeWindow(qtw.QWidget):
     def __init__(self):
@@ -244,6 +260,7 @@ class OneDTimeWindow(qtw.QWidget):
         self.canvas.getAxis('right').setStyle(showValues=False)
         self.canvas.getAxis("right").tickFont = font     
         self.canvas.getAxis('right').setPen(self.axis_pen)
+        self.canvas.getAxis("right").enableAutoSIPrefix(False)
         self.canvas.showAxis('top')
         self.canvas.getAxis("top").tickFont = font     
         self.canvas.getAxis('top').setStyle(showValues=False)
@@ -262,20 +279,48 @@ class OneDTimeWindow(qtw.QWidget):
     
 
     def update_plot(self):
-        self.canvas.setLabel('left', self.model.value_label, units=self.model.value_unit, **self.axis_labelStyle)
         for item in self.curves:
             self.canvas.removeItem(item)
+
+        if self.model.get_num_lines() == 2:
+            self.canvas.getAxis('right').setStyle(showValues=True)
+            self.canvas2 = pg.ViewBox()
+            self.canvas.scene().addItem(self.canvas2)
+            self.canvas.getAxis('right').linkToView(self.canvas2)
+            self.canvas2.setXLink(self.canvas)
+            self.canvas2.setGeometry(self.canvas.getViewBox().sceneBoundingRect())
         
+            def updateViews():
+                self.canvas2.setGeometry(self.canvas.getViewBox().sceneBoundingRect())
+                self.canvas2.linkedViewChanged(self.canvas.getViewBox(), self.canvas2.XAxis)
+
+            updateViews()
+            self.canvas.getViewBox().sigResized.connect(updateViews)
+
         self.times = self.model.get_times()
         xs = [x/self.time_factor for x in self.times]
 
-        pen = self.curve_pen
-        pen.setColor(QColor(self.color_map[0]))
-        curve = self.canvas.plot(xs, self.model.get_values(), pen=self.curve_pen, antialias=True, )
-        legend = MyItemSample(curve)
-        
-        self.legend.addItem(legend, name=self.model.name )
-        self.curves.append(curve)
+        # line_index = 0
+        nlines = self.model.get_num_lines()
+        if (nlines <= 2):
+            for line_index in range(nlines):
+                if (line_index == 0):
+                    self.canvas.setLabel('left', self.model.get_value_label(line_index), units=self.model.value_unit, **self.axis_labelStyle)
+                else:
+                    self.canvas.setLabel('right', self.model.get_value_label(line_index), units=self.model.value_unit, **self.axis_labelStyle)
+                pen = pg.mkPen(QColor(self.color_map[line_index]), width=5, style=QtCore.Qt.SolidLine)
+                # pen.setColor()
+                if (line_index == 0):
+                    curve = self.canvas.plot(xs, self.model.get_values(line_index), pen=pen, antialias=True, )
+                    self.curves.append(curve)
+                else:
+                    curve = pg.PlotDataItem(xs, self.model.get_values(line_index), pen=pen, antialias=True)
+                    self.canvas2.addItem(curve)
+                    self.curves.append(curve)
+                legend = MyItemSample(curve)
+                self.legend.addItem(legend, name=self.model.get_name(line_index) )
+                
+
 
     def update_time(self, step):  
         if self.model is not None:    
@@ -522,7 +567,7 @@ class TwoDFESWindow(qtw.QWidget):
 
     def plot(self, step, model):
         data, value_raw = model.get_fes_step(step)      
-        x, y, dx, dy = data
+        x, y = data
         
         z = value_raw*627.5095
 
@@ -1128,7 +1173,7 @@ class MetaDynamicsResultModel:
                         for j in range(zz.shape[1]):
                             zz[i,j] += pot.value([x[i,j],y[i,j]])
                                 
-                    self.fes.append( ((x, y, dx, dy),  deepcopy(zz)))
+                    self.fes.append( ((x, y),  deepcopy(zz)))
                 
             elif n_dimension == 1:
                 self.fes = []
@@ -1297,11 +1342,15 @@ class MTDTool(qtw.QMainWindow):
             self.time_slider.setMaximum(last_step)
             self.time_slider.setValue(last_step)
 
-            cv_coord_model = CVCoordAdpater(self.model, 0)
+            cv_coord_model = CVCoordAdpater(self.model)
             self.cv_coord_tab.set_model(cv_coord_model)
 
-            cv_height_model = CVHeightAdpater(self.model, 0)
+            cv_height_model = CVHeightAdpater(self.model)
             self.cv_height_tab.set_model(cv_height_model)
+
+
+        
+
             
     def clean_data(self):
         self.model = MetaDynamicsResultModel()
@@ -1317,8 +1366,10 @@ class MTDTool(qtw.QMainWindow):
     def update_plots(self, step):
         self.cur_step_label.setText(str(step))
         self.cur_time_label.setText('{:8.2f} ps'.format((step+1)*self.model.gaussian_interval_time/1000.0))
-        self.fes_tab.plot(step, self.model)
-        self.fes_tab_2d.plot(step, self.model)
+        if self.model.get_fes_dimension() == 1:
+            self.fes_tab.plot(step, self.model)
+        if self.model.get_fes_dimension() == 2:
+            self.fes_tab_2d.plot(step, self.model)
         self.cv_coord_tab.update_time(step)
         self.cv_height_tab.update_time(step)
         self.time_property.plot(step, self.model)
