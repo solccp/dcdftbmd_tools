@@ -27,20 +27,9 @@ from pyqtgraph.graphicsItems.LegendItem import LegendItem
 from pyqtgraph.graphicsItems.LabelItem import LabelItem
 from pgcolorbar.colorlegend import ColorLegendItem
 
-import matplotlib
-matplotlib.use('QT5Agg')
-matplotlib.rcParams["figure.dpi"] = 150.0
-matplotlib.rcParams["figure.figsize"] = [10, 6]
 
-import matplotlib.pyplot as plt
 import matplotlib.cm as cmap
-from matplotlib.backends.backend_qt5agg import (
-        FigureCanvas, NavigationToolbar2QT as NavigationToolbar)
 
-from matplotlib.figure import Figure
-from matplotlib.gridspec import GridSpec
-from matplotlib.ticker import MaxNLocator
-from matplotlib.colors import BoundaryNorm
 import skimage.feature
 
 import pymatgen as mg
@@ -832,7 +821,7 @@ def cmapToColormap(cmap, nTicks=16):
 
 
 
-class TwoDFESWindowNew(qtw.QWidget):
+class TwoDFESWindow(qtw.QWidget):
     def __init__(self):
         super().__init__()
         self.initUI()
@@ -967,7 +956,7 @@ class TwoDFESWindowNew(qtw.QWidget):
             minima_pos = skimage.feature.peak_local_max(-z)
             
             
-            print(minima_pos)
+            # print(minima_pos)
             
             if len(minima_pos) >= 2:
                 font = QFont()
@@ -975,13 +964,10 @@ class TwoDFESWindowNew(qtw.QWidget):
                 minima = []
                 for c in minima_pos:
                     minima.append( (x[c[0]], y[c[1]], z[c[0],c[1]] ))
-            
-            
-
 
                 minima.sort(key=lambda x: x[2])
                 for minimum in minima:
-                    print(minimum)
+                    # print(minimum)
                     text = pg.TextItem('{:.2f}'.format(minimum[2]), color=(255,255,255), anchor=(-0.1,0.5) )
                     text.setPos(minimum[0], minimum[1])
                     text.setFont(font)
@@ -1017,130 +1003,6 @@ class TwoDFESWindowNew(qtw.QWidget):
                 self.canvas.addItem(ala)
                 self.lines.append(ala)
                 
-
-                # line = self.canvas.plot(path_x, path_y, pen=pg.mkPen({'color': "#FF0000", 'width': 4}), antialias=True)
-                # print(line.mapToParent(path_x[0], path_x[0]))
-                # self.lines.append(line)
-        else:
-            pass
-
-class TwoDFESWindow(qtw.QWidget):
-    def __init__(self):
-        super().__init__()
-        self.initUI()
-
-
-    def initUI(self):
-        self.layout = qtw.QVBoxLayout(self)
-        self.setLayout(self.layout)
-        
-        self.figure = plt.figure()
-        self.canvas = FigureCanvas(self.figure)
-        self.toolbar = NavigationToolbar(self.canvas, self)
-        self.layout.addWidget(self.toolbar)
-        self.layout.addWidget(self.canvas)
-        
-        gs00 = GridSpec(1, 2, width_ratios=[10,1])
-        self.axis = self.figure.add_subplot(gs00[0])
-        self.cax = self.figure.add_subplot(gs00[1])
-
-        
-
-
-        self.lines = []
-
-
-    def dijkstra(self, V, start):
-        mask = V.mask
-        visit_mask = mask.copy() # mask visited cells
-        m = np.ones_like(V) * np.inf
-        connectivity = [(i,j) for i in [-1, 0, 1] for j in [-1, 0, 1] if (not (i == j == 0))]
-        cc = start # current_cell
-        m[cc] = 0
-        P = {}  # dictionary of predecessors 
-        #while (~visit_mask).sum() > 0:
-        for _ in range(V.size):
-            neighbors = [tuple(e) for e in np.asarray(cc) - connectivity 
-                        if e[0] > 0 and e[1] > 0 and e[0] < V.shape[0] and e[1] < V.shape[1]]
-            neighbors = [ e for e in neighbors if not visit_mask[e] ]
-            tentative_distance = np.asarray([V[e]-V[cc] for e in neighbors])
-            for i,e in enumerate(neighbors):
-                d = tentative_distance[i] + m[cc]
-                if d < m[e]:
-                    m[e] = d
-                    P[e] = cc
-            visit_mask[cc] = True
-            m_mask = np.ma.masked_array(m, visit_mask)
-            cc = np.unravel_index(m_mask.argmin(), m.shape)
-        return m, P
-
-    def shortestPath(self, start, end, P):
-        Path = []
-        step = end
-        while True:
-            Path.append(step)
-            if step == start: break
-            step = P[step]
-        Path.reverse()
-        return np.asarray(Path)
-
-
-    def plot(self, step, model):
-        data, value_raw = model.get_fes_step(step)      
-        x, y,_ , _ = data
-        
-        z = value_raw*627.5095
-
-        # if 2d
-        if (model.get_fes_dimension() == 2):
-            self.axis.cla()
-
-            self.axis.set_xlabel('CV1 ({})'.format(model.get_cvs()[0][0]))
-            self.axis.set_ylabel('CV2 ({})'.format(model.get_cvs()[1][0]))
-            
-           
-            levels = MaxNLocator(nbins=255).tick_values(z.min(), z.max())
-            cmap = plt.get_cmap('gnuplot2')
-            
-            cf = self.axis.contourf(x,
-                            y, z, levels=levels,
-                            cmap=cmap)
-            self.figure.colorbar(cf, cax=self.cax)
-     
-            
-            minima_pos = skimage.feature.peak_local_max(-z)
-            print(minima_pos)
-            
-            if len(minima_pos) >= 2:
-                minima = []
-                for c in minima_pos:
-                    minima.append( (x[c[0],c[1]], y[c[0],c[1]], z[c[0],c[1]] ))
-            
-                minima.sort(key=lambda x: x[2])
-                for minimum in minima:
-                    self.axis.annotate('{:.2f}'.format(minimum[2]), (minimum[0], minimum[1]), color='white')
-                
-                start = (minima_pos[0][0], minima_pos[0][1])
-                end =  (minima_pos[1][0], minima_pos[1][1])
-                
-                V = np.ma.masked_array(z, z>0)
-                D, P = self.dijkstra(V, start)
-                path = self.shortestPath(start, end, P)
-
-                path_x = []
-                path_y = []
-                maximum = (0, 0, -1E20)
-                for po in path:
-                    path_x.append(x[po[0], po[1]])
-                    path_y.append(y[po[0], po[1]])
-                    if z[po[0], po[1]] > maximum[2]:
-                        maximum = (x[po[0], po[1]], y[po[0], po[1]], z[po[0], po[1]])
-                
-                self.axis.annotate('{:.2f}'.format(maximum[2]), (maximum[0], maximum[1]), color='black')
-                self.axis.plot(path_x, path_y, 'r.-')
-                print(path_x, path_y)
-                
-            self.canvas.draw()
         else:
             pass
 
@@ -1775,11 +1637,8 @@ class MTDTool(qtw.QMainWindow):
         self.fes_tab = FESWindow()
         self.tab.addTab(self.fes_tab, 'FES')
         
-        # self.fes_tab_2d = TwoDFESWindow()
-        # self.tab.addTab(self.fes_tab_2d, '2D FES')
-
-        self.fes_tab_2d_new = TwoDFESWindowNew()
-        self.tab.addTab(self.fes_tab_2d_new, '2D FES')
+        self.fes_tab_2d = TwoDFESWindow()
+        self.tab.addTab(self.fes_tab_2d, '2D FES')
 
         self.cv_coord_tab = OneDTimeWindow()
         self.tab.addTab(self.cv_coord_tab, 'CV')
@@ -1854,6 +1713,15 @@ class MTDTool(qtw.QMainWindow):
             self.init_plots()
             self.update_plots(last_step)
 
+            if self.model.get_fes_dimension() == 1:
+                self.tab.setCurrentIndex(0)
+                self.tab.setTabEnabled(0, True)
+                self.tab.setTabEnabled(1, False)
+            elif self.model.get_fes_dimension() == 2:
+                self.tab.setCurrentIndex(1)
+                self.tab.setTabEnabled(0, False)
+                self.tab.setTabEnabled(1, True)
+
             
     def clean_data(self):
         self.model = MetaDynamicsResultModel()
@@ -1873,11 +1741,12 @@ class MTDTool(qtw.QMainWindow):
     def update_plots(self, step):
         self.cur_step_label.setText(str(step))
         self.cur_time_label.setText('{:8.2f} ps'.format((step+1)*self.model.gaussian_interval_time/1000.0))
+        
         if self.model.get_fes_dimension() == 1:
             self.fes_tab.plot(step, self.model)
+            
         if self.model.get_fes_dimension() == 2:
-            # self.fes_tab_2d.plot(step, self.model)
-            self.fes_tab_2d_new.plot(step, self.model)
+            self.fes_tab_2d.plot(step, self.model)
         
         self.cv_coord_tab.update_time(step)
         self.cv_height_tab.update_time(step)
