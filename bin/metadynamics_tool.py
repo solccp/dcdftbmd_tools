@@ -2,8 +2,13 @@
 
 import sys
 import os
-import math
 import pathlib
+
+# path = pathlib.Path(os.path.dirname(__file__)).absolute()
+# sys.path.append(str(path.parent))
+
+import math
+import collections
 from copy import deepcopy
 
 import numpy as np
@@ -15,14 +20,16 @@ from PyQt5.QtCore import Qt, QStringListModel, QRegExp, QThread, pyqtSignal
 from PyQt5 import QtCore
 
 import pyqtgraph as pg
+pg.setConfigOption('background', (255,255,255))
+pg.setConfigOption('foreground', (0,0,0))
 from pyqtgraph.graphicsItems.LegendItem import ItemSample
 from pyqtgraph.graphicsItems.LegendItem import LegendItem
 from pyqtgraph.graphicsItems.LabelItem import LabelItem
-
+from pgcolorbar.colorlegend import ColorLegendItem
 
 import matplotlib
 matplotlib.use('QT5Agg')
-matplotlib.rcParams["figure.dpi"] = 200.0
+matplotlib.rcParams["figure.dpi"] = 150.0
 matplotlib.rcParams["figure.figsize"] = [10, 6]
 
 import matplotlib.pyplot as plt
@@ -38,6 +45,7 @@ import skimage.feature
 
 import pymatgen as mg
 import pymatgen.util.coord as uc
+import bisect
 
 
 def get_distance(cart_coord_1, cart_coord_2, lattice=None):
@@ -370,7 +378,9 @@ class OneDTimeWindow(qtw.QWidget):
     def __init__(self):
         super().__init__()
         
-        self.color_map = ['#1f77b4',  '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2',  '#7f7f7f', '#bcbd22', '#17becf']
+        # self.color_map = ['#1f77b4',  '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2',  '#7f7f7f', '#bcbd22', '#17becf']
+        self.color_map = ['#4363d8', '#e6194B', '#3cb44b', '#ffe119',  '#f58231', '#911eb4', '#42d4f4', '#f032e6', '#bfef45', '#fabebe', 
+            '#469990', '#e6beff', '#9A6324', '#fffac8', '#800000', '#aaffc3', '#808000', '#ffd8b1', '#000075', '#a9a9a9', '#000000']
         self.model = None
         self.line = None
         
@@ -583,7 +593,64 @@ class CustomAxis(pg.AxisItem):
         self.setMinimumWidth(w)
         self.picture = None
         
+class ColorBar(pg.GraphicsObject):
+
+    def __init__(self, cmap, width, height, ticks=None, tick_labels=None, label=None):
+        pg.GraphicsObject.__init__(self)
+
+        # handle args
+        label = label or ''
+        w, h = width, height
+        stops, colors = cmap.getStops('float')
+        smn, spp = stops.min(), stops.ptp()
+        stops = (stops - stops.min())/stops.ptp()
+        if ticks is None:
+            ticks = np.r_[0.0:1.0:5j, 1.0] * spp + smn
+        tick_labels = tick_labels or ["%0.2g" % (t,) for t in ticks]
+
+        # setup picture
+        self.pic = pg.QtGui.QPicture()
+        p = pg.QtGui.QPainter(self.pic)
+
+        # draw bar with gradient following colormap
+        p.setPen(pg.mkPen('k'))
+        grad = pg.QtGui.QLinearGradient(w/2.0, 0.0, w/2.0, h*1.0)
+        for stop, color in zip(stops, colors):
+            grad.setColorAt(1.0 - stop, pg.QtGui.QColor(*[255*c for c in color]))
+        p.setBrush(pg.QtGui.QBrush(grad))
+        p.drawRect(pg.QtCore.QRectF(0, 0, w, h))
+
+        # draw ticks & tick labels
+        mintx = 0.0
+        for tick, tick_label in zip(ticks, tick_labels):
+            y_ = (1.0 - (tick - smn)/spp) * h
+            p.drawLine(0.0, y_, -5.0, y_)
+            br = p.boundingRect(0, 0, 0, 0, pg.QtCore.Qt.AlignRight, tick_label)
+            if br.x() < mintx:
+                mintx = br.x()
+            p.drawText(br.x() - 10.0, y_ + br.height() / 4.0, tick_label)
+
+        # draw label
+        br = p.boundingRect(0, 0, 0, 0, pg.QtCore.Qt.AlignRight, label)
+        p.drawText(-br.width() / 2.0, h + br.height() + 5.0, label)
         
+        # done
+        p.end()
+
+        # compute rect bounds for underlying mask
+        self.zone = mintx - 12.0, -15.0, br.width() - mintx, h + br.height() + 30.0
+        
+    def paint(self, p, *args):
+        # paint underlying mask
+        p.setPen(pg.QtGui.QColor(255, 255, 255, 0))
+        p.setBrush(pg.QtGui.QColor(255, 255, 255, 200))
+        p.drawRoundedRect(*(self.zone + (9.0, 9.0)))
+        
+        # paint colorbar
+        p.drawPicture(0, 0, self.pic)
+        
+    def boundingRect(self):
+        return pg.QtCore.QRectF(self.pic.boundingRect())
 
 class FESWindow(qtw.QWidget):
     def __init__(self):
@@ -692,11 +759,274 @@ class FESWindow(qtw.QWidget):
         else:
             pass
 
+def cmapToColormap(cmap, nTicks=16):
+    """
+    Converts a Matplotlib cmap to pyqtgraphs colormaps. No dependency on matplotlib.
+    Parameters:
+    *cmap*: Cmap object. Imported from matplotlib.cm.*
+    *nTicks*: Number of ticks to create when dict of functions is used. Otherwise unused.
+    """
+
+    # Case #1: a dictionary with 'red'/'green'/'blue' values as list of ranges (e.g. 'jet')
+    # The parameter 'cmap' is a 'matplotlib.colors.LinearSegmentedColormap' instance ...
+    if hasattr(cmap, '_segmentdata'):
+        colordata = getattr(cmap, '_segmentdata')
+        if ('red' in colordata) and isinstance(colordata['red'], collections.Sequence):
+
+            # collect the color ranges from all channels into one dict to get unique indices
+            posDict = {}
+            for idx, channel in enumerate(('red', 'green', 'blue')):
+                for colorRange in colordata[channel]:
+                    posDict.setdefault(colorRange[0], [-1, -1, -1])[idx] = colorRange[2]
+
+            indexList = list(posDict.keys())
+            indexList.sort()
+            # interpolate missing values (== -1)
+            for channel in range(3):  # R,G,B
+                startIdx = indexList[0]
+                emptyIdx = []
+                for curIdx in indexList:
+                    if posDict[curIdx][channel] == -1:
+                        emptyIdx.append(curIdx)
+                    elif curIdx != indexList[0]:
+                        for eIdx in emptyIdx:
+                            rPos = (eIdx - startIdx) / (curIdx - startIdx)
+                            vStart = posDict[startIdx][channel]
+                            vRange = (posDict[curIdx][channel] - posDict[startIdx][channel])
+                            posDict[eIdx][channel] = rPos * vRange + vStart
+                        startIdx = curIdx
+                        del emptyIdx[:]
+            for channel in range(3):  # R,G,B
+                for curIdx in indexList:
+                    posDict[curIdx][channel] *= 255
+
+            rgb_list = [[i, posDict[i]] for i in indexList]
+
+        # Case #2: a dictionary with 'red'/'green'/'blue' values as functions (e.g. 'gnuplot')
+        elif ('red' in colordata) and isinstance(colordata['red'], collections.Callable):
+            indices = np.linspace(0., 1., nTicks)
+            luts = [np.clip(np.array(colordata[rgb](indices), dtype=np.float), 0, 1) * 255 \
+                    for rgb in ('red', 'green', 'blue')]
+            rgb_list = zip(indices, list(zip(*luts)))
+
+    # If the parameter 'cmap' is a 'matplotlib.colors.ListedColormap' instance, with the attributes 'colors' and 'N'
+    elif hasattr(cmap, 'colors') and hasattr(cmap, 'N'):
+        colordata = getattr(cmap, 'colors')
+        # Case #3: a list with RGB values (e.g. 'seismic')
+        if len(colordata[0]) == 3:
+            indices = np.linspace(0., 1., len(colordata))
+            scaledRgbTuples = [(rgbTuple[0] * 255, rgbTuple[1] * 255, rgbTuple[2] * 255) for rgbTuple in colordata]
+            rgb_list = zip(indices, scaledRgbTuples)
+
+        # Case #4: a list of tuples with positions and RGB-values (e.g. 'terrain')
+        # -> this section is probably not needed anymore!?
+        elif len(colordata[0]) == 2:
+            rgb_list = [(idx, (vals[0] * 255, vals[1] * 255, vals[2] * 255)) for idx, vals in colordata]
+
+    # Case #X: unknown format or datatype was the wrong object type
+    else:
+        raise ValueError("[cmapToColormap] Unknown cmap format or not a cmap!")
+    
+    # Convert the RGB float values to RGBA integer values
+    return list([(pos, (int(r), int(g), int(b), 255)) for pos, (r, g, b) in rgb_list])
+
+
+
+class TwoDFESWindowNew(qtw.QWidget):
+    def __init__(self):
+        super().__init__()
+        self.initUI()
+
+        self.minima = {}
+        self.maxima = {}
+        # self.paths = {}
+    
+    def dijkstra(self, V, start):
+        mask = V.mask
+        visit_mask = mask.copy() # mask visited cells
+        m = np.ones_like(V) * np.inf
+        connectivity = [(i,j) for i in [-1, 0, 1] for j in [-1, 0, 1] if (not (i == j == 0))]
+        cc = start # current_cell
+        m[cc] = 0
+        P = {}  # dictionary of predecessors 
+        #while (~visit_mask).sum() > 0:
+        for _ in range(V.size):
+            neighbors = [tuple(e) for e in np.asarray(cc) - connectivity 
+                        if e[0] > 0 and e[1] > 0 and e[0] < V.shape[0] and e[1] < V.shape[1]]
+            neighbors = [ e for e in neighbors if not visit_mask[e] ]
+            tentative_distance = np.asarray([V[e]-V[cc] for e in neighbors])
+            for i,e in enumerate(neighbors):
+                d = tentative_distance[i] + m[cc]
+                if d < m[e]:
+                    m[e] = d
+                    P[e] = cc
+            visit_mask[cc] = True
+            m_mask = np.ma.masked_array(m, visit_mask)
+            cc = np.unravel_index(m_mask.argmin(), m.shape)
+        return m, P
+
+    def shortestPath(self, start, end, P):
+        Path = []
+        step = end
+        while True:
+            Path.append(step)
+            if step == start: break
+            step = P[step]
+        Path.reverse()
+        return np.asarray(Path)
+
+    def initUI(self):
+        self.layout = qtw.QHBoxLayout(self)
+        self.setLayout(self.layout)
+
+        self.canvas = pg.PlotWidget(axisItems={"left": CustomAxis(orientation="left")})
+        self.canvas.setBackground('w')
+        
+        self.curves = []
+        self.lines = []
+
+        self.layout.addWidget(self.canvas)
+        self.axis_labelStyle = {'font-size': '16pt', 'color': 'black'}
+        
+        font = QFont()
+        font.setPointSize(14)
+
+        self.canvas.getAxis("bottom").tickFont = font
+        self.canvas.getAxis("left").tickFont = font
+        
+
+        self.pen = pg.mkPen(color=(0,0,0), width=5)
+
+        self.canvas.getAxis("bottom").setStyle(tickLength=-10, tickTextOffset = 10)
+        self.canvas.getAxis("left").setStyle(tickLength=-10, tickTextOffset = 10)
+        self.canvas.getAxis('left').setPen(self.pen)
+        self.canvas.getAxis('bottom').setPen(self.pen)
+        self.canvas.getAxis("left").enableAutoSIPrefix(False)
+
+        self.canvas.showAxis("top")
+        self.canvas.showAxis("right")
+        self.canvas.getAxis("top").setStyle(tickLength=0, tickTextOffset = 10)
+        self.canvas.getAxis("right").setStyle(tickLength=0, tickTextOffset = 10)
+        self.canvas.getAxis('right').setPen(self.pen)
+        self.canvas.getAxis('top').setPen(self.pen)
+        self.canvas.getAxis("right").enableAutoSIPrefix(False)
+        self.canvas.getAxis('top').setStyle(showValues=False)
+        self.canvas.getAxis('right').setStyle(showValues=False)
+
+        self.colorLegendItem = ColorLegendItem(showHistogram=False)
+        self.colorLegendItem.setMinimumHeight(60)
+        
+        
+        self.graphicsLayoutWidget = pg.GraphicsLayoutWidget()
+        self.graphicsLayoutWidget.setMaximumWidth(60)
+        # self.graphicsLayoutWidget.addItem(self.canvas.getPlotItem(), 0, 0)
+        self.graphicsLayoutWidget.addItem(self.colorLegendItem, 0, 0)
+        self.layout.addWidget(self.graphicsLayoutWidget)
+
+    def plot(self, step, model):
+        data, value_raw = model.get_fes_step(step)      
+        _, _, x, y = data
+        z = value_raw*627.5095
+
+        # if 2d
+        if (model.get_fes_dimension() == 2):
+
+            self.canvas.setLabel('left', 'CV2 ({})'.format(model.get_cvs()[1][0]), **self.axis_labelStyle )
+            self.canvas.setLabel('bottom', 'CV1 ({})'.format(model.get_cvs()[0][0]), **self.axis_labelStyle )
+            self.canvas.getAxis('left').setPen(self.pen)
+            self.canvas.getAxis('bottom').setPen(self.pen)
+
+            for item in self.curves:
+                self.canvas.removeItem(item)
+            self.curves = []
+            for item in self.lines:
+                self.canvas.removeItem(item)
+            self.lines = []
+
+            pos, rgba_colors = zip(*cmapToColormap(cmap.gnuplot2))
+            pgColormap =  pg.ColorMap(pos, rgba_colors)
+            levels=(z.min(), z.max())
+            image = pg.ImageItem(z, autoDownsample=True, levels=levels)
+            image.setLookupTable(pgColormap.getLookupTable()) 
+            self.canvas.addItem(image)
+            self.curve = image
+            self.colorLegendItem.setImageItem(image)
+            self.colorLegendItem.setLevels(levels)
+            
+           
+
+
+            x_width = (x[-1]-x[0])
+            y_width = (y[-1]-y[0])
+
+            
+            image.scale(x_width/100.0, y_width/100.0)        
+            image.translate(y[0]/y_width*100, x[0]/x_width*100)
+
+            
+            minima_pos = skimage.feature.peak_local_max(-z)
+            
+            
+            print(minima_pos)
+            
+            if len(minima_pos) >= 2:
+                font = QFont()
+                font.setPointSize(14)
+                minima = []
+                for c in minima_pos:
+                    minima.append( (x[c[0]], y[c[1]], z[c[0],c[1]] ))
+            
+            
+
+
+                minima.sort(key=lambda x: x[2])
+                for minimum in minima:
+                    print(minimum)
+                    text = pg.TextItem('{:.2f}'.format(minimum[2]), color=(255,255,255), anchor=(-0.1,0.5) )
+                    text.setPos(minimum[0], minimum[1])
+                    text.setFont(font)
+                    self.canvas.addItem(text)
+                    self.lines.append(text)
+                    ala = pg.ScatterPlotItem([minimum[0]], [minimum[1]], size=8, pen=pg.mkPen(color=(0,255,0)) )
+                    self.canvas.addItem(ala)
+                    self.lines.append(ala)
+                    
+                
+                start = (minima_pos[0][0], minima_pos[0][1])
+                end =  (minima_pos[1][0], minima_pos[1][1])
+                
+                V = np.ma.masked_array(z, z>0)
+                D, P = self.dijkstra(V, start)
+                path = self.shortestPath(start, end, P)
+
+                path_x = []
+                path_y = []
+                maximum = (0, 0, -1E20)
+                for po in path:
+                    path_x.append(y[po[0]])
+                    path_y.append(x[po[1]])
+                    if z[po[0], po[1]] > maximum[2]:
+                        maximum = (x[po[0]], y[po[1]], z[po[0], po[1]])
+                # print(path_x[0], path_y[1])
+                text = pg.TextItem('{:.2f}'.format(maximum[2]), color=(0,0,0), anchor=(-0.1,0.5) )
+                text.setPos(maximum[0], maximum[1])
+                text.setFont(font)
+                self.canvas.addItem(text)
+                self.lines.append(text)
+                ala = pg.ScatterPlotItem([maximum[0]], [maximum[1]], size=8, pen=pg.mkPen(color=(0,255,0)) )
+                self.canvas.addItem(ala)
+                self.lines.append(ala)
+                
+
+                # line = self.canvas.plot(path_x, path_y, pen=pg.mkPen({'color': "#FF0000", 'width': 4}), antialias=True)
+                # print(line.mapToParent(path_x[0], path_x[0]))
+                # self.lines.append(line)
+        else:
+            pass
 
 class TwoDFESWindow(qtw.QWidget):
     def __init__(self):
         super().__init__()
-        self.color_map = ['#1f77b4',  '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2',  '#7f7f7f', '#bcbd22', '#17becf']
         self.initUI()
 
 
@@ -757,7 +1087,7 @@ class TwoDFESWindow(qtw.QWidget):
 
     def plot(self, step, model):
         data, value_raw = model.get_fes_step(step)      
-        x, y = data
+        x, y,_ , _ = data
         
         z = value_raw*627.5095
 
@@ -779,8 +1109,9 @@ class TwoDFESWindow(qtw.QWidget):
      
             
             minima_pos = skimage.feature.peak_local_max(-z)
+            print(minima_pos)
             
-            if len(minima_pos) == 2:
+            if len(minima_pos) >= 2:
                 minima = []
                 for c in minima_pos:
                     minima.append( (x[c[0],c[1]], y[c[0],c[1]], z[c[0],c[1]] ))
@@ -807,7 +1138,7 @@ class TwoDFESWindow(qtw.QWidget):
                 
                 self.axis.annotate('{:.2f}'.format(maximum[2]), (maximum[0], maximum[1]), color='black')
                 self.axis.plot(path_x, path_y, 'r.-')
-            
+                print(path_x, path_y)
                 
             self.canvas.draw()
         else:
@@ -1082,6 +1413,20 @@ class GaussianPotentialModel:
         value = -self.height*np.exp(-exp_value)
         return value
 
+# class DCDFTBMD_InputOutputWindow(qtw.QWidget):
+    
+#     def __init__(self, parent=None, flags=Qt.WindowFlags()):
+#         super().__init__(parent=parent, flags=flags)
+#         self.initUI()
+
+#     def initUI(self):
+#         pass
+
+#     def loadInputFile(self):
+
+
+    
+
 class MetaDynamicsResultModel:
     
     def __init__(self):
@@ -1124,6 +1469,8 @@ class MetaDynamicsResultModel:
                     self.cvs.append(('Coordination Numbers', 'coordination_number'))
                 elif ('BONDDISTANCE') in line:
                     self.cvs.append(('Bond Distance', 'bond_distance'))
+                elif 'ATOMPOINTPLANEDISTANCE' in line:
+                    self.cvs.append(('Plane Distance', 'plane_distance'))
 
     def get_cvs(self):
         if self.cvs is None:
@@ -1148,6 +1495,7 @@ class MetaDynamicsResultModel:
         """
         min_coord = {}
         max_coord = {}
+        first = True
         with open(fileName, 'r') as f:
             line = next(f)
             gau_pots = []
@@ -1156,11 +1504,13 @@ class MetaDynamicsResultModel:
                 arr = line.split()
                 pot_step = int(arr[3])
                 title_line = next(f)
-                arr = title_line.split()
-                interval_step = int(arr[9])
-                if (pot_step == 1):
-                    self.gaussian_interval_step = interval_step
-                    self.gaussian_interval_time = float(arr[3])
+                if 'RECOVERED FROM RESTART FILE' not in title_line:
+                    if first:
+                        arr = title_line.split()
+                        interval_step = int(arr[9])
+                        self.gaussian_interval_step = interval_step
+                        self.gaussian_interval_time = float(arr[3])
+                        first = False
                 
                 
                 line = next(f)
@@ -1314,38 +1664,32 @@ class MetaDynamicsResultModel:
             n_dimension = self.get_fes_dimension()
             if  n_dimension == 2:
                 self.fes = []
-
-                gau_pots = self.get_gau_pots()[:step+1]
-                
-                
+                gau_pots = self.get_gau_pots()[:step+1]               
                 axis_bounds = []
                 
-
                 for cv_index in range(n_dimension):
-
                     min_x, max_x = self.gaussian_coord_range[cv_index]
                     width = max_x - min_x
                     min_x -= 0.5*width
-                    max_x += 0.5*width
-
-                    
+                    max_x += 0.5*width 
                     axis_bounds.append( (min_x, max_x ))
-                
-                # print(axis_bounds)
-                dx, dy = 0.05, 0.05
 
-                # generate 2 2d grids for the x & y bounds
-                y, x = np.mgrid[slice(axis_bounds[1][0], axis_bounds[1][1] + dy, dy),
-                                slice(axis_bounds[0][0], axis_bounds[0][1] + dx, dx)]
-
-                zz = np.zeros( x.shape )
+                npts = 100
+                grids_x = np.linspace(axis_bounds[0][0], axis_bounds[0][1], num=npts)
+                grids_y = np.linspace(axis_bounds[1][0], axis_bounds[1][1], num=npts)
+                y, x = np.meshgrid(grids_x, grids_y)
+                zz = np.zeros( (len(grids_x), len(grids_y)) )
                 
                 for pot in gau_pots:
-                    for i in range(zz.shape[0]):
-                        for j in range(zz.shape[1]):
-                            zz[i,j] += pot.value([x[i,j],y[i,j]])
+                    min_x_index = bisect.bisect_right(grids_x, pot.cv_coords[0]-pot.widths[0]*3.0)-1
+                    min_y_index = bisect.bisect_right(grids_y, pot.cv_coords[1]-pot.widths[1]*3.0)-1
+                    max_x_index = bisect.bisect_left(grids_x, pot.cv_coords[0]+pot.widths[0]*3.0)+1
+                    max_y_index = bisect.bisect_left(grids_y, pot.cv_coords[1]+pot.widths[1]*3.0)+1
+                    for i in range(min_x_index, max_x_index):
+                        for j in range(min_y_index, max_y_index):
+                            zz[i,j] += pot.value([grids_x[i],grids_y[j]])
                                 
-                    self.fes.append( ((x, y),  deepcopy(zz)))
+                    self.fes.append( ((x, y, grids_x, grids_y),  deepcopy(zz)))
                 
             elif n_dimension == 1:
                 self.fes = []
@@ -1371,20 +1715,6 @@ class MetaDynamicsResultModel:
         return self.fes[step]
 
         
-            
-    # def get_trajectory(self):
-    #     names = self.default_names['trajectory']
-    #     if self.trajectory is None:
-    #         for name in names:
-    #             filename = self.folderName.joinpath(name)
-    #             if os.path.exists:
-    #                 self.load_trajectory(filename)
-    #                 break
-    #     if self.trajectory is None:
-    #         raise RuntimeError('Cannot load file: {}'.format(', '.join(names)))
-    #     return self.trajectory
-
-
 class MTDTool(qtw.QMainWindow):
     
     def __init__(self):
@@ -1445,8 +1775,11 @@ class MTDTool(qtw.QMainWindow):
         self.fes_tab = FESWindow()
         self.tab.addTab(self.fes_tab, 'FES')
         
-        self.fes_tab_2d = TwoDFESWindow()
-        self.tab.addTab(self.fes_tab_2d, '2D FES')
+        # self.fes_tab_2d = TwoDFESWindow()
+        # self.tab.addTab(self.fes_tab_2d, '2D FES')
+
+        self.fes_tab_2d_new = TwoDFESWindowNew()
+        self.tab.addTab(self.fes_tab_2d_new, '2D FES')
 
         self.cv_coord_tab = OneDTimeWindow()
         self.tab.addTab(self.cv_coord_tab, 'CV')
@@ -1543,7 +1876,8 @@ class MTDTool(qtw.QMainWindow):
         if self.model.get_fes_dimension() == 1:
             self.fes_tab.plot(step, self.model)
         if self.model.get_fes_dimension() == 2:
-            self.fes_tab_2d.plot(step, self.model)
+            # self.fes_tab_2d.plot(step, self.model)
+            self.fes_tab_2d_new.plot(step, self.model)
         
         self.cv_coord_tab.update_time(step)
         self.cv_height_tab.update_time(step)
