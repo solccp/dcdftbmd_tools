@@ -3,6 +3,7 @@
 import sys
 import os
 import pathlib
+# import multiprocessing 
 
 # path = pathlib.Path(os.path.dirname(__file__)).absolute()
 # sys.path.append(str(path.parent))
@@ -868,13 +869,10 @@ class TwoDFESWindow(qtw.QWidget):
         self.layout = qtw.QHBoxLayout(self)
         self.setLayout(self.layout)
 
-        self.canvas = pg.PlotWidget(axisItems={"left": CustomAxis(orientation="left")})
-        self.canvas.setBackground('w')
-        
+        self.canvas = pg.PlotItem(axisItems={"left": CustomAxis(orientation="left")})        
         self.curves = []
         self.lines = []
 
-        self.layout.addWidget(self.canvas)
         self.axis_labelStyle = {'font-size': '16pt', 'color': 'black'}
         
         font = QFont()
@@ -907,14 +905,13 @@ class TwoDFESWindow(qtw.QWidget):
         
         
         self.graphicsLayoutWidget = pg.GraphicsLayoutWidget()
-        self.graphicsLayoutWidget.setMaximumWidth(60)
-        # self.graphicsLayoutWidget.addItem(self.canvas.getPlotItem(), 0, 0)
-        self.graphicsLayoutWidget.addItem(self.colorLegendItem, 0, 0)
+        self.graphicsLayoutWidget.addItem(self.canvas, 0, 0)
+        self.graphicsLayoutWidget.addItem(self.colorLegendItem, 0, 1)
         self.layout.addWidget(self.graphicsLayoutWidget)
 
     def plot(self, step, model):
         data, value_raw = model.get_fes_step(step)      
-        _, _, x, y = data
+        x, y = data
         z = value_raw*627.5095
 
         # if 2d
@@ -942,66 +939,65 @@ class TwoDFESWindow(qtw.QWidget):
             self.colorLegendItem.setImageItem(image)
             self.colorLegendItem.setLevels(levels)
             
-           
-
-
             x_width = (x[-1]-x[0])
             y_width = (y[-1]-y[0])
 
             
             image.scale(x_width/100.0, y_width/100.0)        
             image.translate(y[0]/y_width*100, x[0]/x_width*100)
-
             
             minima_pos = skimage.feature.peak_local_max(-z)
-            
-            
-            # print(minima_pos)
-            
-            if len(minima_pos) >= 2:
-                font = QFont()
-                font.setPointSize(14)
+            if step in self.minima:
+                minima = self.minima[step]
+            else:
                 minima = []
                 for c in minima_pos:
                     minima.append( (x[c[0]], y[c[1]], z[c[0],c[1]] ))
 
                 minima.sort(key=lambda x: x[2])
+                self.minima[step] = minima   
+
+            if len(minima_pos) >= 2:    
+                font = QFont()
+                font.setPointSize(14)
                 for minimum in minima:
-                    # print(minimum)
                     text = pg.TextItem('{:.2f}'.format(minimum[2]), color=(255,255,255), anchor=(-0.1,0.5) )
                     text.setPos(minimum[0], minimum[1])
                     text.setFont(font)
                     self.canvas.addItem(text)
                     self.lines.append(text)
-                    ala = pg.ScatterPlotItem([minimum[0]], [minimum[1]], size=8, pen=pg.mkPen(color=(0,255,0)) )
-                    self.canvas.addItem(ala)
-                    self.lines.append(ala)
+                    item = pg.ScatterPlotItem([minimum[0]], [minimum[1]], size=8, pen=pg.mkPen(color=(0,255,0)) )
+                    self.canvas.addItem(item)
+                    self.lines.append(item)
                     
-                
-                start = (minima_pos[0][0], minima_pos[0][1])
-                end =  (minima_pos[1][0], minima_pos[1][1])
-                
-                V = np.ma.masked_array(z, z>0)
-                D, P = self.dijkstra(V, start)
-                path = self.shortestPath(start, end, P)
+                if step in self.maxima:
+                    maximum = self.maxima[step]
+                else:
+                    start = (minima_pos[0][0], minima_pos[0][1])
+                    end =  (minima_pos[1][0], minima_pos[1][1])
+                    
+                    V = np.ma.masked_array(z, z>0)
+                    D, P = self.dijkstra(V, start)
+                    path = self.shortestPath(start, end, P)
 
-                path_x = []
-                path_y = []
-                maximum = (0, 0, -1E20)
-                for po in path:
-                    path_x.append(y[po[0]])
-                    path_y.append(x[po[1]])
-                    if z[po[0], po[1]] > maximum[2]:
-                        maximum = (x[po[0]], y[po[1]], z[po[0], po[1]])
-                # print(path_x[0], path_y[1])
+                    path_x = []
+                    path_y = []
+                    maximum = (0, 0, -1E20)
+                    for po in path:
+                        path_x.append(y[po[0]])
+                        path_y.append(x[po[1]])
+                        if z[po[0], po[1]] > maximum[2]:
+                            maximum = (x[po[0]], y[po[1]], z[po[0], po[1]])
+                    self.maxima[step] = maximum
+                
                 text = pg.TextItem('{:.2f}'.format(maximum[2]), color=(0,0,0), anchor=(-0.1,0.5) )
                 text.setPos(maximum[0], maximum[1])
                 text.setFont(font)
                 self.canvas.addItem(text)
                 self.lines.append(text)
-                ala = pg.ScatterPlotItem([maximum[0]], [maximum[1]], size=8, pen=pg.mkPen(color=(0,255,0)) )
-                self.canvas.addItem(ala)
-                self.lines.append(ala)
+                item = pg.ScatterPlotItem([maximum[0]], [maximum[1]], size=8, pen=pg.mkPen(color=(0,255,0)) )
+                self.canvas.addItem(item)
+                self.lines.append(item)
                 
         else:
             pass
@@ -1539,7 +1535,7 @@ class MetaDynamicsResultModel:
                 npts = 100
                 grids_x = np.linspace(axis_bounds[0][0], axis_bounds[0][1], num=npts)
                 grids_y = np.linspace(axis_bounds[1][0], axis_bounds[1][1], num=npts)
-                y, x = np.meshgrid(grids_x, grids_y)
+                
                 zz = np.zeros( (len(grids_x), len(grids_y)) )
                 
                 for pot in gau_pots:
@@ -1551,7 +1547,7 @@ class MetaDynamicsResultModel:
                         for j in range(min_y_index, max_y_index):
                             zz[i,j] += pot.value([grids_x[i],grids_y[j]])
                                 
-                    self.fes.append( ((x, y, grids_x, grids_y),  deepcopy(zz)))
+                    self.fes.append( ((grids_x, grids_y),  deepcopy(zz)))
                 
             elif n_dimension == 1:
                 self.fes = []
