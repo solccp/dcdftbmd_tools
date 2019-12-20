@@ -1296,6 +1296,9 @@ class MetaDynamicsResultModel:
         self.charge = None
         self.lattice = None
         self.symbols = None
+        self.metadata = None
+        self.gaussian_interval_step = None
+        self.gaussian_interval_time = None
         
         self.default_names = {
             'main_input': ['dftb.inp'],
@@ -1317,7 +1320,43 @@ class MetaDynamicsResultModel:
         self.cvs = None
         self.trajectory = None
         self.net_atomic_charge = None
+        self.metadata = None
+        self.gaussian_interval_step = None
+        self.gaussian_interval_time = None
         
+    def load_metadata(self, filename):
+        with open(filename, 'r') as f:
+            for line in f:
+                if 'MD         =     True' in line:
+                    line = next(f)
+                    section = {}
+                    for line in f:
+                        if len(line.strip()) == 0:
+                            break
+                        arr = line.split('=')
+                        key = arr[0].strip().replace(' ', '_')
+                        value = arr[1].strip()
+                        section[key] = value
+                    if len(section) > 0:
+                        if self.metadata is None:
+                            self.metadata = {}
+                        self.metadata['md'] = section
+                elif 'Total number of atoms' in line:
+                    self.metadata['Total_number_of_atoms'] = int(line.split()[-1])
+                    break
+
+
+    def get_metaData(self):
+        if self.metadata is None:
+            for name in self.default_names['main_output']:
+                filename = self.folderName.joinpath(name)
+                if os.path.exists(filename):
+                    self.load_metadata(filename)
+                    break
+        if self.metadata is None:
+            raise RuntimeError('Cannot load file: {}'.format(', '.join(self.default_names['main_output'])))
+        return self.metadata
+    
 
     def loadData_metacvs(self, fileName):
         with open(fileName, 'r') as f:
@@ -1354,6 +1393,9 @@ class MetaDynamicsResultModel:
         min_coord = {}
         max_coord = {}
         first = True
+        second = True
+        first_step = 0
+        first_time = 0.0
         with open(fileName, 'r') as f:
             line = next(f)
             gau_pots = []
@@ -1364,11 +1406,17 @@ class MetaDynamicsResultModel:
                 title_line = next(f)
                 if 'RECOVERED FROM RESTART FILE' not in title_line:
                     if first:
+                        first = False
+                        arr = title_line.split()
+                        first_step = int(arr[9])
+                        first_time = float(arr[3])
+                    elif second:
+                        second = False
                         arr = title_line.split()
                         interval_step = int(arr[9])
-                        self.gaussian_interval_step = interval_step
-                        self.gaussian_interval_time = float(arr[3])
-                        first = False
+                        self.gaussian_interval_step = interval_step - first_step
+                        self.gaussian_interval_time = float(arr[3]) - first_time
+                        
                 
                 
                 line = next(f)
@@ -1411,6 +1459,12 @@ class MetaDynamicsResultModel:
             self.gau_pots = gau_pots
             ncv = len(min_coord)
             self.gaussian_coord_range = [(min_coord[i], max_coord[i]) for i in range(ncv)]
+            if self.gaussian_interval_step is None:
+                metadata = self.get_metaData()
+                md_timestep = float(metadata['md']['Timestep'])*1E15
+                meta_interval = int(metadata['md']['Addition_frequency'])
+                self.gaussian_interval_step = meta_interval
+                self.gaussian_interval_time = meta_interval*md_timestep
 
     def get_gau_pots(self):
         names = self.default_names['bias_potential']
@@ -1539,10 +1593,10 @@ class MetaDynamicsResultModel:
                 zz = np.zeros( (len(grids_x), len(grids_y)) )
                 
                 for pot in gau_pots:
-                    min_x_index = bisect.bisect_right(grids_x, pot.cv_coords[0]-pot.widths[0]*3.0)-1
-                    min_y_index = bisect.bisect_right(grids_y, pot.cv_coords[1]-pot.widths[1]*3.0)-1
-                    max_x_index = bisect.bisect_left(grids_x, pot.cv_coords[0]+pot.widths[0]*3.0)+1
-                    max_y_index = bisect.bisect_left(grids_y, pot.cv_coords[1]+pot.widths[1]*3.0)+1
+                    min_x_index = bisect.bisect_right(grids_x, pot.cv_coords[0]-pot.widths[0]*3.0)
+                    min_y_index = bisect.bisect_right(grids_y, pot.cv_coords[1]-pot.widths[1]*3.0)
+                    max_x_index = bisect.bisect_left(grids_x, pot.cv_coords[0]+pot.widths[0]*3.0)
+                    max_y_index = bisect.bisect_left(grids_y, pot.cv_coords[1]+pot.widths[1]*3.0)
                     for i in range(min_x_index, max_x_index):
                         for j in range(min_y_index, max_y_index):
                             zz[i,j] += pot.value([grids_x[i],grids_y[j]])

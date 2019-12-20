@@ -4,7 +4,7 @@ import sys
 import setuptools
 import glob
 
-__version__ = '0.1.1'
+__version__ = '0.1.2'
 
 
 class get_pybind_include(object):
@@ -118,7 +118,7 @@ setup(
     description='A Toolkit for handling DCDFTBMD input/output',
     long_description='',
     ext_modules=ext_modules,
-    install_requires=load_requires_from_file("requirements.txt"),
+    install_requires=load_requires_from_file("requirements_pip.txt"),
     cmdclass={'build_ext': BuildExt},
     zip_safe=False,
     packages=find_packages(),
