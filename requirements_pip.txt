@@ -3,7 +3,7 @@ statsmodels>=0.9.0
 matplotlib>=3.0
 MDAnalysis>=0.19
 pymatgen>=2019.3.13
-PyQt5==5.13.2
+PyQt5>=5.13.2
 scikit-learn>=0.21
 pyqtgraph @ git+https://github.com/solccp/pyqtgraph@6a2791e1c41ee5b08e860186c26613ddc4ef201d#egg=pyqtgraph-0.11.0
 pgcolorbar @ git+https://github.com/solccp/pgcolorbar@dadd5806b82e69ed883f5bbb435eda909c9b27bf#egg=pgcolorbar-1.0.0
