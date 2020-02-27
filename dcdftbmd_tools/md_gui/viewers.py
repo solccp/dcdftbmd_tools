@@ -8,14 +8,15 @@ import PyQt5.QtWidgets as qtw
 from PyQt5.QtGui import QFont, QColor, QRegExpValidator
 
 from PyQt5.QtCore import QStringListModel, QRegExp
-from dcdftbmd_tools.md_gui.custom_graphic import *
-from dcdftbmd_tools.md_gui.utils import *
+
 
 import matplotlib.cm as cmap
 import skimage.feature
 
-from dcdftbmd_tools.md_gui.models import *
-from dcdftbmd_tools.md_gui.gui_utils import *
+from .models import *
+from .gui_utils import *
+from .custom_graphic import *
+from .utils import *
 
 class OneDTimeWindow(qtw.QWidget):
     def __init__(self):
