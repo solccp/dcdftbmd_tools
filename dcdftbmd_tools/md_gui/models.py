@@ -5,7 +5,14 @@ import os
 import bisect
 from copy import deepcopy
 
-class TimeCourseDataModel():
+class BaseModel():
+    def get_linewith_leftaxis(self, index, default_width = 5):
+        return default_width
+
+    def get_linewith_rightaxis(self, index, default_width = 5):
+        return default_width
+
+class TimeCourseDataModel(BaseModel):
     def __init__(self):
         
         self.times = []
@@ -111,9 +118,7 @@ class TimeCourseDataModel():
                 lines += 1
         raise ValueError('Out of Index: ', index)
 
-    
-
-class CVHeightAdpater:
+class CVHeightAdpater(BaseModel):
     H2kcalmol = 627.5095
     def __init__(self, model):
         self.model = model
@@ -145,7 +150,7 @@ class CVHeightAdpater:
     def get_num_lines_rightaxis(self):
         return 0
 
-class CVCoordAdpater:
+class CVCoordAdpater(BaseModel):
     def __init__(self, model):
         self.model = model
         self.times = None 
@@ -411,7 +416,7 @@ class MetaDynamicsResultModel:
                     self.loadData_biaspot(filename)
                     break
         if self.gau_pots is None:
-            raise RuntimeError('Cannot load file: {}'.format(', '.join(names)))
+            raise RuntimeError('Cannot load file: {} from {}'.format(', '.join(names), self.folderName))
         return self.gau_pots
 
     def get_trajectory(self):
@@ -506,7 +511,7 @@ class MetaDynamicsResultModel:
         if len(all_charges) > 0:
             self.charge = all_charges
     
-    def get_fes_step(self, step):
+    def get_fes_step(self, step, ranges=None):
 
         if self.fes is None:
             n_dimension = self.get_fes_dimension()
@@ -544,10 +549,14 @@ class MetaDynamicsResultModel:
                 gau_pots = self.get_gau_pots()[:step+1]
                 npoints = 150
                 cv_index = 0
-                min_x, max_x = self.gaussian_coord_range[cv_index]
-                width = max_x - min_x
-                min_x -= 0.5*width
-                max_x += 0.5*width
+                if ranges is None:
+                    min_x, max_x = self.gaussian_coord_range[cv_index]
+                    width = max_x - min_x
+                    min_x -= 0.5*width
+                    max_x += 0.5*width
+                else:
+                    min_x, max_x = ranges
+                
                 xs = np.linspace(min_x, max_x, npoints)
                 ys = np.zeros(npoints)
 

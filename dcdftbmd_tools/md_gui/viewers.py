@@ -116,7 +116,8 @@ class OneDTimeWindow(qtw.QWidget):
         legend_offset = (-80,30)
         # cur_legend_pos = None
         if self.legend is not None:
-            legend_offset = self.legend.offset
+            if 'offset' in self.legend.opts:
+                legend_offset = self.legend.opts['offset']
             # cur_legend_pos = self.legend.pos()
             try:
                 self.legend.scene().removeItem(self.legend)
@@ -132,11 +133,12 @@ class OneDTimeWindow(qtw.QWidget):
         nlines = self.model.get_num_lines_leftaxis()
         if (nlines > 0):
             self.canvas.getAxis('left').setStyle(showValues=True)
+            self.canvas.setLabel('left', self.model.get_value_label_leftaxis(), 
+            units=self.model.get_value_unit_leftaxis(), **self.axis_labelStyle)
             for line_index in range(nlines):
-                self.canvas.setLabel('left', self.model.get_value_label_leftaxis(), 
-                units=self.model.get_value_unit_leftaxis(), **self.axis_labelStyle)
-
-                pen = pg.mkPen(QColor(self.color_map[total_line_index]), width=5, style=QtCore.Qt.SolidLine)
+                
+                line_width = self.model.get_linewith_leftaxis(line_index, 5)
+                pen = pg.mkPen(QColor(self.color_map[total_line_index]), width=line_width, style=QtCore.Qt.SolidLine)
                 total_line_index += 1
 
                 
@@ -150,10 +152,11 @@ class OneDTimeWindow(qtw.QWidget):
         nlines = self.model.get_num_lines_rightaxis()
         if nlines > 0:
             self.canvas.getAxis('right').setStyle(showValues=True)
+            self.canvas.setLabel('right', self.model.get_value_label_rightaxis(), units=self.model.get_value_unit_rightaxis(), **self.axis_labelStyle)
             for line_index in range(nlines):
-                self.canvas.setLabel('right', self.model.get_value_label_rightaxis(), units=self.model.get_value_unit_rightaxis(), **self.axis_labelStyle)
-
-                pen = pg.mkPen(QColor(self.color_map[total_line_index]), width=5, style=QtCore.Qt.SolidLine)
+                
+                line_width = self.model.get_linewith_rightaxis(line_index, 5)
+                pen = pg.mkPen(QColor(self.color_map[total_line_index]), width=line_width, style=QtCore.Qt.SolidLine)
                 total_line_index += 1
 
                 curve = pg.PlotDataItem(xs, self.model.get_values_rightaxis(line_index), pen=pen, antialias=True)
@@ -281,6 +284,8 @@ class FESWindow(qtw.QWidget):
                                
         else:
             pass
+
+        
 class TwoDFESWindow(qtw.QWidget):
     def __init__(self):
         super().__init__()
